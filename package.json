@@ -1,0 +1,22 @@
+{
+  "name": "shogi-trainer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/copy-engine.mjs",
+    "dev": "vite --host",
+    "build": "node scripts/copy-engine.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "test:analysis": "tsx scripts/test-analysis.ts"
+  },
+  "dependencies": {
+    "@mizarjp/yaneuraou.halfkp": "7.6.2-alpha.2",
+    "tsshogi": "^2.3.4"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2"
+  }
+}
