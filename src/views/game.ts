@@ -278,7 +278,13 @@ export async function gameView(root: HTMLElement, args: string[]) {
       const cls = ["mv", mine ? "mine" : "", v?.kind ?? "", p === ply ? "current" : ""].join(" ");
       return h("button", { class: cls, onclick: () => goto(p) }, `${p} ${node.displayText}${v?.kind ? MARK[v.kind] : ""}`);
     }));
-    moveList.querySelector(".current")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // 一覧の中だけをスクロールする(scrollIntoView はページ全体も動かしてしまうため使わない)
+    const cur = moveList.querySelector<HTMLElement>(".current");
+    if (cur) {
+      const top = cur.getBoundingClientRect().top - moveList.getBoundingClientRect().top + moveList.scrollTop;
+      if (top < moveList.scrollTop) moveList.scrollTop = top;
+      else if (top + cur.offsetHeight > moveList.scrollTop + moveList.clientHeight) moveList.scrollTop = top + cur.offsetHeight - moveList.clientHeight;
+    }
   }
 
   function drawActions() {
