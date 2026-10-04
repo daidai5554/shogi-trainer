@@ -9,6 +9,7 @@ import { gameView } from "./views/game";
 import { trainView } from "./views/train";
 import { statsView } from "./views/stats";
 import { settingsView } from "./views/settings";
+import { bookView } from "./views/book";
 
 export type View = (root: HTMLElement, args: string[], query: URLSearchParams) => void | (() => void) | Promise<void | (() => void)>;
 
@@ -17,6 +18,7 @@ const routes: { [k: string]: { view: View; tab: string } } = {
   import: { view: importView, tab: "games" },
   games: { view: gamesView, tab: "games" },
   game: { view: gameView, tab: "games" },
+  book: { view: bookView, tab: "book" },
   train: { view: trainView, tab: "train" },
   stats: { view: statsView, tab: "stats" },
   settings: { view: settingsView, tab: "settings" },
@@ -25,6 +27,7 @@ const routes: { [k: string]: { view: View; tab: string } } = {
 const TABS = [
   { id: "home", href: "#/", icon: "⌂", label: "ホーム" },
   { id: "games", href: "#/games", icon: "☗", label: "棋譜" },
+  { id: "book", href: "#/book", icon: "⋔", label: "定跡" },
   { id: "train", href: "#/train", icon: "✎", label: "練習" },
   { id: "stats", href: "#/stats", icon: "▤", label: "分析" },
   { id: "settings", href: "#/settings", icon: "⚙", label: "設定" },

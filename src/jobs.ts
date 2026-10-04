@@ -1,5 +1,5 @@
 // 解析ジョブの順番待ち。アプリを開いている間、裏で1局ずつ解析する。
-import { analyzeGame, buildProblems } from "./analysis";
+import { PROBLEMS_VERSION, analyzeGame, buildProblems, buildTsume } from "./analysis";
 import * as db from "./db";
 import { engine } from "./engine";
 import type { Game } from "./types";
@@ -46,7 +46,10 @@ export function enqueue(gameId: string, front = false, nodes?: number) {
 
 /** 未解析の対局をすべて順番待ちに入れる(起動時) */
 export async function resumePending() {
-  for (const g of await db.allGames()) if (!g.analysisDone) enqueue(g.id);
+  // 未解析の対局と、問題作成のルールが古い対局(解析結果は再利用するので速い)
+  for (const g of await db.allGames()) {
+    if (!g.analysisDone || (g.problemsVersion ?? 1) < PROBLEMS_VERSION) enqueue(g.id);
+  }
 }
 
 async function acquireWakeLock() {
@@ -87,9 +90,14 @@ async function run() {
       emit();
       const existing = new Map((await db.problemsOfGame(id)).map((p) => [p.id, p]));
       const probs = await buildProblems(game, search, nodes, existing, (d, t) => { status = { ...status, done: d, total: t }; emit(); });
+      status = { ...status, label: `vs ${opp} から詰将棋を探し中`, done: 0, total: 1 };
+      emit();
+      probs.push(...await buildTsume(game, search, existing));
       const keep = new Set(probs.map((p) => p.id));
       for (const p of probs) await db.putProblem(p);
       for (const old of existing.values()) if (!keep.has(old.id)) await db.deleteProblem(old.id);
+      game.problemsVersion = PROBLEMS_VERSION;
+      await db.putGame(game);
       const g2 = game;
       finishListeners.forEach((f) => f(g2));
     }

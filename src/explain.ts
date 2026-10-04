@@ -11,8 +11,10 @@ export interface ExplainInput {
   sfen: string; // 問題の局面(悪手を指す前)
   side: Side; // この局面で指す側
   mine: boolean; // 指したのが自分か
-  playedUsi: string;
-  playedScore: Score | null; // 指した側から見た、指した後の評価
+  playedUsi?: string;
+  playedScore?: Score | null; // 指した側から見た、指した後の評価
+  tsume?: boolean; // 詰将棋として聞く
+  mateLen?: number;
   bestPv: string[];
   bestScore: Score; // 指した側から見た評価
   alternatives?: string[]; // 最善手以外の正解手(USI)
@@ -35,10 +37,12 @@ function bod(sfen: string, moves: string[] = []): string {
 }
 
 export function buildPrompt(x: ExplainInput): string {
+  if (x.tsume) return buildTsumePrompt(x);
   const ja = (usis: string[], n = 1) => usiToJapanese(x.sfen, usis, n);
   const sideJa = x.side === "black" ? "☗先手" : "☖後手";
   const who = x.mine ? `${sideJa}（私）` : `${sideJa}（相手）`;
-  const played = ja([x.playedUsi])[0] ?? x.playedUsi;
+  const playedUsi = x.playedUsi ?? "";
+  const played = ja([playedUsi])[0] ?? playedUsi;
   const best = ja(x.bestPv)[0] ?? x.bestPv[0];
   const lines: string[] = [];
 
@@ -59,7 +63,7 @@ export function buildPrompt(x: ExplainInput): string {
   const alts = (x.alternatives ?? []).filter((a) => a !== x.bestPv[0]);
   if (alts.length) lines.push(`【ほぼ同じくらい良い手】${alts.map((a) => ja([a])[0]).join("・")}`);
   if (x.punishPv?.length) {
-    const after = usiToJapanese(x.sfen, [x.playedUsi, ...x.punishPv], 13).slice(1);
+    const after = usiToJapanese(x.sfen, [playedUsi, ...x.punishPv], 13).slice(1);
     lines.push(`【実戦の手の後、私の最善の応手】${after.join(" ")}${x.punishScore ? `（私から見た評価値 ${scoreText(x.punishScore)}）` : ""}`);
   }
   if (x.missedMate) lines.push("※ この局面には詰みがありましたが、実戦では見逃しました。");
@@ -83,6 +87,32 @@ export function buildPrompt(x: ExplainInput): string {
   lines.push("");
   lines.push("AIの読み筋に無い変化を推測で説明するときは「推測ですが」と明記してください。盤面の駒の位置は上の局面図を正としてください。初段〜二段向けに、簡潔にお願いします。");
   return lines.join("\n");
+}
+
+function levelText(r?: string): string {
+  return !r ? "初段〜二段くらい" : /^\d+$/.test(r) ? `将棋クエストのレート${r}くらい` : `将棋ウォーズ${r}くらい`;
+}
+
+function buildTsumePrompt(x: ExplainInput): string {
+  const sideJa = x.side === "black" ? "☗先手" : "☖後手";
+  return [
+    `あなたは将棋の指導者です。私は${levelText(x.myRating)}です。`,
+    "以下は実戦に現れた詰み局面です。将棋AI（やねうら王＋水匠5）の正解手順を根拠に、言葉で解説してください。",
+    "",
+    "【局面】",
+    bod(x.sfen),
+    "",
+    `【攻め方】${sideJa}`,
+    `【問題】${x.mateLen ?? x.bestPv.length}手詰め`,
+    `【正解手順（AI）】${usiToJapanese(x.sfen, x.bestPv).join(" ")}`,
+    "",
+    "【お願い】",
+    "1. 正解手順を1手ずつ、なぜその手なのか（玉の逃げ道の封じ方・捨て駒の意味）を説明してください",
+    "2. 初手を見つけるための着眼点を教えてください",
+    "3. 似た形で使える手筋・格言を1つ",
+    "",
+    "AIの手順に無い変化を推測で説明するときは「推測ですが」と明記してください。盤面の駒の位置は上の局面図を正としてください。簡潔にお願いします。",
+  ].join("\n");
 }
 
 /**

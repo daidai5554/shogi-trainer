@@ -4,7 +4,7 @@ import { Color, Move, PieceType, Record, Square } from "tsshogi";
 import { recordOf } from "./kifu";
 import { negate, winRate } from "./score";
 import { detectStrategy } from "./strategy";
-import type { Game, MoveVerdict, Phase, PlyAnalysis, Problem, ProblemTag, Side } from "./types";
+import type { Game, MoveVerdict, Phase, PlyAnalysis, Problem, ProblemKind, ProblemTag, Side } from "./types";
 import type { SearchResult } from "./engine";
 
 export type SearchFn = (position: string, opts: { nodes: number; multipv?: number }) => Promise<SearchResult>;
@@ -138,8 +138,10 @@ function opp(s: Side): Side {
 export async function buildProblems(game: Game, search: SearchFn, nodes: number, existing: Map<string, Problem>, onProgress?: (d: number, t: number) => void): Promise<Problem[]> {
   if (!game.verdicts) return [];
   const record = recordOf(game);
+  // 中盤以降は悪手・疑問手。序盤は小さな損(勝率3%以上)も「定跡確認」の問題にする
   const targets = game.verdicts.filter((v) =>
-    v.side === game.mySide && (v.kind === "blunder" || v.kind === "mistake" || v.missedMate || v.allowedMate));
+    v.side === game.mySide && (v.kind === "blunder" || v.kind === "mistake" || v.missedMate || v.allowedMate ||
+      (v.phase === "opening" && v.ply <= BOOK_MAX_PLY && v.lossWin >= 0.03)));
   const out: Problem[] = [];
   let done = 0;
   for (const v of targets) {
@@ -175,6 +177,7 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
     const now = Date.now();
     out.push({
       id, gameId: game.id, ply: v.ply,
+      kind: v.phase === "opening" ? "book" : "mistake",
       sfen: record.position.sfen,
       side: v.side,
       playedUsi: v.usi,
@@ -187,6 +190,62 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
       tags,
       opening: game.strategy?.label ?? "",
       createdAt: now,
+      due: now, intervalDays: 0, ease: 2.5, reps: 0, lapses: 0, lastResult: null, history: [],
+    });
+  }
+  return out;
+}
+
+export const BOOK_MAX_PLY = 40;
+export const PROBLEMS_VERSION = 3;
+
+/** 問題の種類(古いデータは種類が無いので局面から判定) */
+export function problemKind(p: Problem): ProblemKind {
+  return p.kind ?? (p.phase === "opening" ? "book" : "mistake");
+}
+
+/**
+ * 実戦詰将棋: 対局中(自分・相手どちらでも)に 3〜7手詰めがあった局面を集める。
+ * 詰み手順の途中ではなく、詰みが始まった局面だけを使う。
+ */
+export async function buildTsume(game: Game, search: SearchFn, existing: Map<string, Problem>, maxPerGame = 3): Promise<Problem[]> {
+  const record = recordOf(game);
+  const candidates: { i: number; v: number }[] = [];
+  for (let i = 0; i < game.analysis.length; i++) {
+    const s = game.analysis[i]?.lines[0]?.score;
+    if (!s || s.kind !== "mate" || !s.win || s.v < 3 || s.v > 7) continue;
+    // 2手前(同じ側の手番)も7手以内の詰みなら、詰み手順の途中なので除く
+    // (長い詰みが7手以内になった最初の局面は使う)
+    const prev = game.analysis[i - 2]?.lines[0]?.score;
+    if (prev && prev.kind === "mate" && prev.win && prev.v <= 7) continue;
+    // 自分の詰み逃しは「悪手」の問題として既にあるので除く
+    if (game.verdicts?.some((v) => v.ply === i + 1 && v.missedMate && v.side === game.mySide)) continue;
+    candidates.push({ i, v: s.v });
+  }
+  // 長い詰みを優先(5手・7手のほうが練習になる)
+  candidates.sort((a, b) => b.v - a.v);
+  const out: Problem[] = [];
+  for (const c of candidates) {
+    if (out.length >= maxPerGame) break;
+    const id = `${game.id}:t${c.i + 1}`;
+    const prev = existing.get(id);
+    if (prev) { out.push(prev); continue; }
+    const pos = positionArg(game, record, c.i + 1);
+    // 深く読み直して詰み手数を確定する
+    const res = await search(pos, { nodes: 800_000 });
+    const best = res.lines[0];
+    if (!best || best.score.kind !== "mate" || !best.score.win || best.score.v < 3 || best.score.v > 7) continue;
+    const pv = await extendPv(search, pos, best.pv, best.score.v);
+    record.goto(c.i);
+    const side: Side = record.position.color === Color.BLACK ? "black" : "white";
+    const now = Date.now();
+    out.push({
+      id, kind: "tsume", mateLen: best.score.v, gameId: game.id, ply: c.i + 1,
+      sfen: record.position.sfen, side,
+      playedUsi: game.usiMoves[c.i] ?? "",
+      answers: [best.pv[0]], bestPv: pv.slice(0, best.score.v), bestScore: best.score,
+      playedScore: null, lossWin: 0, phase: "end", tags: [],
+      opening: game.strategy?.label ?? "", createdAt: now,
       due: now, intervalDays: 0, ease: 2.5, reps: 0, lapses: 0, lastResult: null, history: [],
     });
   }

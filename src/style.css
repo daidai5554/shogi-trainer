@@ -306,3 +306,40 @@ summary { cursor: pointer; color: var(--accent); }
   border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
 }
 .ask-text { font-size: 0.75rem; font-family: ui-monospace, monospace; }
+
+/* 今日のトレーニング */
+.progress { display: flex; gap: 5px; margin: -4px 0 8px; flex-wrap: wrap; }
+.progress .dot { width: 18px; height: 6px; border-radius: 3px; background: var(--line); }
+.progress .dot.k-book { background: color-mix(in srgb, var(--pv) 35%, var(--line)); }
+.progress .dot.k-mistake { background: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+.progress .dot.k-tsume { background: color-mix(in srgb, var(--bad) 35%, var(--line)); }
+.progress .dot.done.k-book, .progress .dot.now.k-book { background: var(--pv); }
+.progress .dot.done.k-mistake, .progress .dot.now.k-mistake { background: var(--warn); }
+.progress .dot.done.k-tsume, .progress .dot.now.k-tsume { background: var(--bad); }
+.progress .dot.now { outline: 2px solid var(--text); outline-offset: 1px; }
+.tag.k-book { color: #fff; background: var(--pv); border-color: var(--pv); }
+.tag.k-mistake { color: #fff; background: var(--warn); border-color: var(--warn); }
+.tag.k-tsume { color: #fff; background: var(--bad); border-color: var(--bad); }
+.btn[disabled] { opacity: 0.45; }
+
+/* 定跡ツリー */
+.segs { display: flex; gap: 0; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg { flex: 1; min-height: 40px; border: none; background: var(--card); color: var(--muted); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.seg + .seg { border-left: 1px solid var(--line); }
+.seg.active { background: var(--accent); color: var(--accent-text); font-weight: 700; }
+.list-btn {
+  display: block; width: 100%; text-align: left; font: inherit; color: var(--text);
+  background: none; border: none; border-bottom: 1px solid var(--line); padding: 8px 2px; cursor: pointer;
+}
+.list-btn:last-child { border-bottom: none; }
+.crumbs { color: var(--muted); overflow-wrap: anywhere; margin-bottom: 4px; }
+.book-table td { vertical-align: middle; }
+.book-table .hbar { height: 5px; margin-top: 3px; }
+.clickable { cursor: pointer; }
+.clickable:active { background: var(--bg); }
+.warn { color: var(--warn); }
+.good-bg { background: var(--good) !important; }
+.bad-bg { background: var(--bad) !important; }
+.tab { font-size: 0.68rem; }
+.eval-row { flex-wrap: wrap; row-gap: 2px; }
+.card .eval-row b { font-size: 1.05rem; }

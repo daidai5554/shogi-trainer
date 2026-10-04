@@ -67,12 +67,18 @@ export interface Game {
   analysisNodes: number;
   analysisDone: boolean;
   verdicts: MoveVerdict[] | null;
+  problemsVersion?: number; // 問題作成ロジックの版。上がったら作り直す
 }
 
 export type ProblemTag = "blunder" | "mistake" | "missedMate" | "allowedMate";
 
+/** mistake: 自分の悪手 / book: 序盤(定跡)の確認 / tsume: 実戦の詰み局面 */
+export type ProblemKind = "mistake" | "book" | "tsume";
+
 export interface Problem {
-  id: string; // gameId:ply
+  id: string; // gameId:ply (詰将棋は gameId:tply)
+  kind?: ProblemKind; // 古いデータには無い → problemKind() で判定
+  mateLen?: number; // 詰将棋の手数
   gameId: string;
   ply: number;
   sfen: string; // 出題局面
