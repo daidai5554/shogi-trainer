@@ -183,7 +183,8 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; }
 .hand-piece[disabled] { opacity: 0.9; }
 .hand-empty { color: var(--muted); font-size: 0.8rem; }
 .board {
-  position: relative; aspect-ratio: 1 / 1.08; width: 100%;
+  /* 上に筋(1〜9)、右に段(一〜九)を書く余白 */
+  position: relative; aspect-ratio: 1 / 1.08; width: calc(100% - 18px); margin: 16px 18px 0 0;
   background: var(--board); border: 2px solid var(--board-line); border-radius: 4px;
 }
 .grid {
@@ -208,7 +209,11 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; }
 }
 .piece.rot { transform: rotate(180deg); }
 .piece.prom { color: #b3261e; }
-.coords-wrap { display: none; }
+.coords-wrap { position: absolute; inset: 0; pointer-events: none; }
+.coords { position: absolute; display: flex; color: var(--muted); font-size: 0.72rem; line-height: 1; }
+.coords span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.coords.files { left: 0; right: 0; top: -16px; height: 14px; }
+.coords.ranks { top: 0; bottom: 0; right: -18px; width: 16px; flex-direction: column; }
 .arrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .arrow { stroke-width: 0.16; stroke-linecap: round; opacity: 0.8; }
 .arrow.best { stroke: var(--best); }
