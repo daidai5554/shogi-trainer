@@ -194,7 +194,8 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; }
   border-right: 1px solid var(--board-line); border-bottom: 1px solid var(--board-line);
   display: flex; align-items: center; justify-content: center; position: relative;
 }
-.cell:nth-child(9n) { border-right: none; }
+.cell.edge-r { border-right: none; }
+.cell.edge-b { border-bottom: none; }
 .cell.last { background: rgba(255, 220, 90, 0.55); }
 .cell.selected { background: rgba(47, 111, 214, 0.35); }
 .cell.target::after {

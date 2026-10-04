@@ -132,6 +132,9 @@ export class BoardView {
       const c = h("div", { class: "cell" });
       c.style.gridColumn = String(x + 1);
       c.style.gridRow = String(y + 1);
+      // 盤の端の線は外枠と重なるので消す(表示上の位置で判定。反転時に左右が入れ替わるため)
+      if (x === 8) c.classList.add("edge-r");
+      if (y === 8) c.classList.add("edge-b");
       if (last && last.to.equals(sq)) c.classList.add("last");
       if (this.selected instanceof Square && this.selected.equals(sq)) c.classList.add("selected");
       if (targets.has(sq.index)) c.classList.add("target");
