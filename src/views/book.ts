@@ -103,7 +103,8 @@ export async function bookView(root: HTMLElement, _args: string[], q: URLSearchP
       h("div", { class: "crumbs small" }, crumbs.length ? crumbs.join(" ") : "初期局面"),
       h("div", { class: "row" },
         h("button", { class: "btn small", onclick: () => go([]) }, "最初から"),
-        h("button", { class: "btn small", onclick: () => go(path.slice(0, -1)), ...(path.length ? {} : { disabled: true }) }, "1手戻る")));
+        h("button", { class: "btn small", onclick: () => go(path.slice(0, -1)), ...(path.length ? {} : { disabled: true }) }, "1手戻る"),
+        h("a", { class: "btn small primary", href: `#/train?line=1&side=${side}&path=${path.join(",")}` }, "ここから手順ドリル")));
     if (!node) {
       explorer.replaceChildren(head, h("p", { class: "muted" }, "この局面はあなたの対局（この絞り込み）にありません。"));
       return;

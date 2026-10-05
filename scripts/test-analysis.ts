@@ -2,7 +2,7 @@
 import fs from "fs";
 import { createRequire } from "module";
 import { importGame } from "../src/kifu";
-import { analyzeGame, buildProblems, usiToJapanese, type SearchFn } from "../src/analysis";
+import { analyzeGame, buildExtraTsume, buildProblems, buildPunish, buildTsume, usiToJapanese, type SearchFn } from "../src/analysis";
 import { parseInfo } from "../src/engine";
 import { scoreText } from "../src/score";
 import type { PVLine } from "../src/types";
@@ -48,5 +48,10 @@ for (const v of game.verdicts!) {
 }
 const probs = await buildProblems(game, search, nodes, new Map());
 for (const p of probs) console.log("問題", p.ply, p.tags.join(","), "正解:", usiToJapanese(p.sfen, p.answers.slice(0, 1)).join(), "候補", p.answers.length, "読み:", usiToJapanese(p.sfen, p.bestPv, 6).join(" "));
+const ts = await buildTsume(game, search, new Map());
+const pu = await buildPunish(game, search, new Map());
+const ex = await buildExtraTsume(game, search, new Map(), 3);
+console.log("kinds", JSON.stringify(probs.reduce((a: any, p) => (a[p.kind ?? "-"] = (a[p.kind ?? "-"] ?? 0) + 1, a), {})));
+for (const p of [...ts, ...pu, ...ex]) console.log(p.kind, p.ply, p.mateLen ?? "", p.note ?? "", usiToJapanese(p.sfen, p.bestPv, 7).join(" "));
 mod.terminate();
 process.exit(0);

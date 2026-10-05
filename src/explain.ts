@@ -13,6 +13,7 @@ export interface ExplainInput {
   mine: boolean; // 指したのが自分か
   playedUsi?: string;
   playedScore?: Score | null; // 指した側から見た、指した後の評価
+  refutePv?: string[]; // 実戦の手の後の、相手の最善の応手順
   tsume?: boolean; // 詰将棋として聞く
   mateLen?: number;
   bestPv: string[];
@@ -58,6 +59,10 @@ export function buildPrompt(x: ExplainInput): string {
   const ctx = [x.opening, x.phase ? PHASE_JA[x.phase] : ""].filter(Boolean).join("・");
   if (ctx) lines.push(`【戦型・局面】${ctx}`);
   lines.push(`【実戦の手】${played}${x.playedScore ? `（指した後の評価値 ${scoreText(x.playedScore)}、${who}から見た値）` : ""}`);
+  if (x.refutePv?.length) {
+    const r = usiToJapanese(x.sfen, [playedUsi, ...x.refutePv], 8).slice(1);
+    lines.push(`【実戦の手の後のAIの読み（相手の好手）】${r.join(" ")}`);
+  }
   lines.push(`【AIの最善手】${best}（評価値 ${scoreText(x.bestScore)}）`);
   lines.push(`【AIの読み筋】${ja(x.bestPv, 12).join(" ")}`);
   const alts = (x.alternatives ?? []).filter((a) => a !== x.bestPv[0]);

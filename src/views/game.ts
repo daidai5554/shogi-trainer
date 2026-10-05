@@ -10,6 +10,7 @@ import { negate, scoreText, winRate } from "../score";
 import { PHASE_JA } from "../stats";
 import type { Game, MoveVerdict, Score } from "../types";
 import { askClaude } from "../explain";
+import { playHref } from "./play";
 import { confirmDialog, fmtSec, h, pct, toast } from "../ui";
 import { RESULT_JA, SOURCE_JA, opponentOf } from "./common";
 
@@ -29,12 +30,13 @@ export async function gameView(root: HTMLElement, args: string[]) {
 
   const header = h("div", { class: "game-header" });
   const graph = h("div", { class: "graph" });
+  const points = h("details", { class: "card points" });
   const boardView = new BoardView(record.position);
   const controls = h("div", { class: "controls" });
   const info = h("div", { class: "card info" });
   const moveList = h("div", { class: "move-list" });
   const actions = h("div", { class: "card actions" });
-  root.append(header, graph, boardView.el, controls, info, h("h2", {}, "指し手"), moveList, actions);
+  root.append(header, graph, points, boardView.el, controls, info, h("h2", {}, "指し手"), moveList, actions);
 
   const total = () => game!.usiMoves.length;
   const verdictOf = (p: number): MoveVerdict | undefined => game!.verdicts?.find((v) => v.ply === p);
@@ -74,6 +76,48 @@ export async function gameView(root: HTMLElement, args: string[]) {
     );
   }
 
+  /** 自分の1手ごとの考慮時間(30秒で頭打ち)。悪手・疑問手は赤 */
+  function timeBars(n: number, W: number): string {
+    const g = game!;
+    const H = 34, CAP = 30_000;
+    let bars = "", total = 0, count = 0;
+    record.moves.forEach((node, p) => {
+      if (p === 0) return;
+      const v = verdictOf(p);
+      const mine = v ? v.side === g.mySide : (p % 2 === 1) === (g.mySide === "black");
+      if (!mine) return;
+      const ms = node.elapsedMs || 0;
+      total += ms; count++;
+      const hh = Math.max(1, (Math.min(ms, CAP) / CAP) * H);
+      const bad = v?.kind === "blunder" || v?.kind === "mistake";
+      bars += `<rect x="${((p - 0.5) / n * W).toFixed(1)}" y="${(H - hh).toFixed(1)}" width="${Math.max(1.2, W / n * 0.9).toFixed(1)}" height="${hh.toFixed(1)}" class="tbar${bad ? " bad" : ""}"/>`;
+    });
+    if (!count || total === 0) return "";
+    return `<svg class="tbars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg>
+      <div class="graph-label"><span>あなたの考慮時間（赤=悪手・疑問手、30秒で頭打ち）</span><span>平均${(total / count / 1000).toFixed(1)}秒</span></div>`;
+  }
+
+  /** この対局のポイント: 勝率が大きく動いた手(両者)を最大3つ */
+  function drawPoints() {
+    const g = game!;
+    if (!g.verdicts) { points.replaceChildren(); return; }
+    const count = (side: "me" | "opp", k: string) => g.verdicts!.filter((v) => (v.side === g.mySide) === (side === "me") && v.kind === k).length;
+    const mine = g.verdicts.filter((v) => v.side === g.mySide);
+    const avg = mine.length ? mine.reduce((a, v) => a + v.lossWin, 0) / mine.length : 0;
+    const top = [...g.verdicts].filter((v) => v.lossWin >= 0.15).sort((a, b) => b.lossWin - a.lossWin).slice(0, 3).sort((a, b) => a.ply - b.ply);
+    points.replaceChildren(
+      h("summary", { class: "small" },
+        h("b", {}, "この対局のポイント"), `　あなた 悪手${count("me", "blunder")}・疑問手${count("me", "mistake")}`),
+      h("div", { class: "small", style: "margin-top:6px" },
+        `1手あたりの損失 ${(avg * 100).toFixed(1)}%　`,
+        h("span", { class: "muted" }, `相手 悪手${count("opp", "blunder")}・疑問手${count("opp", "mistake")}`)),
+      ...(top.length ? [h("div", { class: "small muted", style: "margin-top:6px" }, "勝負の分かれ目（タップで移動）")] : []),
+      ...top.map((v) => h("button", { class: "list-btn small", onclick: () => goto(v.ply) },
+        `${v.ply}手目 ${record.moves[v.ply]?.displayText ?? ""}（${v.side === g.mySide ? "あなた" : "相手"}）勝率 −${pct(v.lossWin)}`,
+        v.allowedMate ? "・頓死" : v.missedMate ? "・詰み逃し" : "")),
+    );
+  }
+
   function drawGraph() {
     const n = total();
     const W = 360, H = 110;
@@ -103,7 +147,8 @@ export async function gameView(root: HTMLElement, args: string[]) {
       ${dots}
       <line class="cursor" x1="${cx}" y1="0" x2="${cx}" y2="${H}"/>
     </svg>
-    <div class="graph-label"><span>あなたの勝率</span>${pts.length < n + 1 && !game!.analysisDone ? `<span>解析中…</span>` : ""}</div>`;
+    <div class="graph-label"><span>あなたの勝率</span>${pts.length < n + 1 && !game!.analysisDone ? `<span>解析中…</span>` : ""}</div>
+    ${timeBars(n, W)}`;
     const svg = graph.querySelector("svg")!;
     const jump = (ev: PointerEvent) => {
       const r = svg.getBoundingClientRect();
@@ -263,6 +308,10 @@ export async function gameView(root: HTMLElement, args: string[]) {
         h("summary", {}, "この局面のAIの読み"),
         pvLine(record.position.sfen, a.lines[0].pv, `${ply}手目以降のAIの読み`)));
     }
+    if (ply < total()) {
+      record.goto(ply);
+      parts.push(h("a", { class: "btn small", href: playHref(record.position.sfen, g.mySide, `${g.id}:${ply}`) }, "▶ この局面からAIと指す"));
+    }
     parts.push(h("label", { class: "check small" },
       h("input", { type: "checkbox", ...(showBest ? { checked: true } : {}), onchange: (e: Event) => { showBest = (e.target as HTMLInputElement).checked; drawBoard(); } }),
       " 盤に矢印を表示（直前の手について 緑: AI推奨、赤: 実戦）"));
@@ -338,7 +387,7 @@ export async function gameView(root: HTMLElement, args: string[]) {
   }
 
   function drawAll(full = true) {
-    if (full) { drawHeader(); drawActions(); }
+    if (full) { drawHeader(); drawActions(); drawPoints(); }
     drawGraph();
     drawBoard();
     drawControls();

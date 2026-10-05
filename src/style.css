@@ -348,3 +348,34 @@ summary { cursor: pointer; color: var(--accent); }
 .tab { font-size: 0.68rem; }
 .eval-row { flex-wrap: wrap; row-gap: 2px; }
 .card .eval-row b { font-size: 1.05rem; }
+
+/* 成長の記録・カレンダー */
+.spark svg { width: 100%; height: 60px; display: block; background: var(--bg); border-radius: 8px; }
+.spark-line { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.spark-line.up { stroke: var(--good); }
+.spark-line.down { stroke: var(--bad); }
+.spark-label { display: flex; justify-content: space-between; margin: 2px 2px 10px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 8px 0 4px; }
+.cal { aspect-ratio: 1; border-radius: 4px; background: var(--bg); border: 1px solid var(--line); }
+.cal.lv1 { background: color-mix(in srgb, var(--good) 35%, var(--bg)); }
+.cal.lv2 { background: color-mix(in srgb, var(--good) 65%, var(--bg)); }
+.cal.lv3 { background: var(--good); }
+.cal.today { outline: 2px solid var(--accent); outline-offset: 1px; }
+.streak { font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); }
+.streak.done { background: var(--accent); color: var(--accent-text); }
+.warn-card { border-color: var(--warn); }
+.guide-link { display: block; text-decoration: none; color: var(--text); padding: 12px 14px; }
+.guide ol, .guide ul { margin: 0; padding-left: 1.3em; }
+.guide li { margin-bottom: 6px; }
+.guide-dl dt { font-weight: 700; margin-top: 8px; }
+.guide-dl dd { margin: 2px 0 0; font-size: 0.9rem; }
+.graph .tbars { height: 34px; margin-top: 4px; border-radius: 6px; background: var(--card); touch-action: auto; }
+.graph .tbar { fill: var(--muted); opacity: 0.55; }
+.graph .tbar.bad { fill: var(--bad); opacity: 0.9; }
+.points { padding: 8px 12px; }
+.points summary { color: var(--text); }
+.points:empty { display: none; }
+.refute { margin-top: 2px; }
+.link-toast { text-decoration: none; display: block; }
+.timer { display: inline-block; font-weight: 700; font-size: 0.9rem; color: var(--accent); margin: 4px 0; }
+.timer.hurry { color: var(--bad); }

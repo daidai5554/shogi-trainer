@@ -1,5 +1,6 @@
 // 解析ジョブの順番待ち。アプリを開いている間、裏で1局ずつ解析する。
-import { PROBLEMS_VERSION, analyzeGame, buildProblems, buildTsume } from "./analysis";
+import { PROBLEMS_VERSION, analyzeGame, buildExtraTsume, buildProblems, buildPunish, buildTsume } from "./analysis";
+import { isMastered } from "./srs";
 import * as db from "./db";
 import { engine } from "./engine";
 import type { Game } from "./types";
@@ -17,7 +18,8 @@ const nodesOverride = new Map<string, number>();
 let running = false;
 let status: JobStatus = { gameId: null, label: "", done: 0, total: 0, queued: 0 };
 const listeners = new Set<() => void>();
-const finishListeners = new Set<(g: Game) => void>();
+/** fresh: 新しく解析した対局(問題の作り直しだけの場合は false) */
+const finishListeners = new Set<(g: Game, fresh: boolean) => void>();
 let wakeLock: { release(): Promise<void> } | null = null;
 
 export function jobStatus(): JobStatus {
@@ -27,7 +29,7 @@ export function onJobChange(fn: () => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
-export function onGameAnalyzed(fn: (g: Game) => void): () => void {
+export function onGameAnalyzed(fn: (g: Game, fresh: boolean) => void): () => void {
   finishListeners.add(fn);
   return () => finishListeners.delete(fn);
 }
@@ -74,6 +76,7 @@ async function run() {
       const settings = await db.getSettings();
       let game = await db.getGame(id);
       if (!game) continue;
+      const fresh = !game.analysisDone;
       const opp = game.mySide === "black" ? game.white : game.black;
       status = { gameId: id, label: `vs ${opp} を解析中`, done: 0, total: game.usiMoves.length + 1, queued: queue.length };
       emit();
@@ -93,13 +96,22 @@ async function run() {
       status = { ...status, label: `vs ${opp} から詰将棋を探し中`, done: 0, total: 1 };
       emit();
       probs.push(...await buildTsume(game, search, existing));
+      probs.push(...await buildPunish(game, search, existing));
+      // 詰将棋が少ないときは、実戦型詰将棋で補充する
+      const tsumeLeft = (await db.allProblems()).filter((p) => p.kind === "tsume" && p.gameId !== id && !isMastered(p)).length
+        + probs.filter((p) => p.kind === "tsume").length;
+      if (tsumeLeft < 15 || [...existing.keys()].some((k) => k.includes(":x"))) {
+        status = { ...status, label: `vs ${opp} から実戦型詰将棋を作成中` };
+        emit();
+        probs.push(...await buildExtraTsume(game, search, existing));
+      }
       const keep = new Set(probs.map((p) => p.id));
       for (const p of probs) await db.putProblem(p);
       for (const old of existing.values()) if (!keep.has(old.id)) await db.deleteProblem(old.id);
       game.problemsVersion = PROBLEMS_VERSION;
       await db.putGame(game);
       const g2 = game;
-      finishListeners.forEach((f) => f(g2));
+      finishListeners.forEach((f) => f(g2, fresh));
     }
   } catch (e) {
     console.error(e);

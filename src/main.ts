@@ -1,7 +1,8 @@
 import "./style.css";
 import { engine } from "./engine";
-import { jobStatus, onJobChange, resumePending } from "./jobs";
+import { jobStatus, onGameAnalyzed, onJobChange, resumePending } from "./jobs";
 import { h } from "./ui";
+import { requestPersistence } from "./db";
 import { homeView } from "./views/home";
 import { importView } from "./views/import";
 import { gamesView } from "./views/games";
@@ -10,6 +11,8 @@ import { trainView } from "./views/train";
 import { statsView } from "./views/stats";
 import { settingsView } from "./views/settings";
 import { bookView } from "./views/book";
+import { playView } from "./views/play";
+import { guideView } from "./views/guide";
 
 export type View = (root: HTMLElement, args: string[], query: URLSearchParams) => void | (() => void) | Promise<void | (() => void)>;
 
@@ -19,6 +22,8 @@ const routes: { [k: string]: { view: View; tab: string } } = {
   games: { view: gamesView, tab: "games" },
   game: { view: gameView, tab: "games" },
   book: { view: bookView, tab: "book" },
+  play: { view: playView, tab: "train" },
+  guide: { view: guideView, tab: "home" },
   train: { view: trainView, tab: "train" },
   stats: { view: statsView, tab: "stats" },
   settings: { view: settingsView, tab: "settings" },
@@ -77,6 +82,20 @@ function renderBanner() {
 }
 
 onJobChange(renderBanner);
+
+// 解析が終わったら結果をお知らせ(タップで対局へ)
+onGameAnalyzed((g, fresh) => {
+  if (!fresh) return;
+  const mine = (g.verdicts ?? []).filter((v) => v.side === g.mySide);
+  const bad = mine.filter((v) => v.kind === "blunder").length;
+  const dub = mine.filter((v) => v.kind === "mistake").length;
+  const mates = mine.filter((v) => v.missedMate).length;
+  const opp = g.mySide === "black" ? g.white : g.black;
+  const t = h("a", { class: "toast show link-toast", href: `#/game/${g.id}` },
+    `vs ${opp} の解析が完了：悪手${bad}・疑問手${dub}${mates ? `・詰み逃し${mates}` : ""}　見る →`);
+  document.body.append(t);
+  setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 300); }, 6000);
+});
 engine.onChange(renderBanner);
 window.addEventListener("hashchange", render);
 
@@ -104,5 +123,6 @@ async function setupServiceWorker() {
 }
 
 void setupServiceWorker();
+void requestPersistence();
 void render();
 void resumePending();

@@ -83,7 +83,9 @@ export async function putSettings(s: Settings): Promise<void> {
 
 /** バックアップ用に全データを書き出す。 */
 export async function exportAll(): Promise<string> {
+  await putKV("lastBackupAt", Date.now());
   return JSON.stringify({
+    activity: await getActivity(),
     version: 1,
     exportedAt: new Date().toISOString(),
     settings: await getSettings(),
@@ -96,7 +98,58 @@ export async function importAll(json: string): Promise<{ games: number; problems
   const data = JSON.parse(json);
   if (data.version !== 1) throw new Error("対応していないバックアップ形式です");
   if (data.settings) await putSettings(data.settings);
+  if (data.activity) await putKV("activity", { ...(await getActivity()), ...data.activity });
   for (const g of data.games ?? []) await putGame(g);
   for (const p of data.problems ?? []) await putProblem(p);
   return { games: data.games?.length ?? 0, problems: data.problems?.length ?? 0 };
+}
+
+/** 汎用のキー・値保存(設定以外の小さなデータ) */
+export async function getKV<T>(key: string): Promise<T | undefined> {
+  return wrap((await store("kv")).get(key));
+}
+export async function putKV<T>(key: string, value: T): Promise<void> {
+  await wrap((await store("kv", "readwrite")).put(value, key));
+}
+
+/** 練習した日の記録(連続日数・成長グラフ用) */
+export interface DayLog { solved: number; correct: number; }
+export type ActivityLog = { [date: string]: DayLog };
+
+export function dateKey(t = Date.now()): string {
+  // 朝4時を日付の区切りにする
+  const d = new Date(t - 4 * 3600_000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export async function logPractice(ok: boolean): Promise<void> {
+  const log = (await getKV<ActivityLog>("activity")) ?? {};
+  const k = dateKey();
+  const d = log[k] ?? { solved: 0, correct: 0 };
+  d.solved++;
+  if (ok) d.correct++;
+  log[k] = d;
+  await putKV("activity", log);
+}
+
+export async function getActivity(): Promise<ActivityLog> {
+  return (await getKV<ActivityLog>("activity")) ?? {};
+}
+
+/** 今日を含む連続練習日数(今日まだなら昨日までの連続) */
+export function streak(log: ActivityLog, now = Date.now()): { days: number; today: boolean } {
+  const today = !!log[dateKey(now)];
+  let days = 0;
+  let t = today ? now : now - 86_400_000;
+  while (log[dateKey(t)]) { days++; t -= 86_400_000; }
+  return { days, today };
+}
+
+/** ブラウザに「データを勝手に消さないで」と依頼する(Android Chrome で有効) */
+export async function requestPersistence(): Promise<boolean> {
+  try {
+    if (!navigator.storage?.persist) return false;
+    if (await navigator.storage.persisted()) return true;
+    return await navigator.storage.persist();
+  } catch { return false; }
 }

@@ -1,6 +1,6 @@
 // 対局の解析: 全局面の評価 → 各指し手の判定 → 自分の悪手から問題を作成。
 // 探索関数を引数で受け取るので、ブラウザでもNode(テスト)でも動く。
-import { Color, Move, PieceType, Record, Square } from "tsshogi";
+import { Color, Move, PieceType, Position, Record, Square } from "tsshogi";
 import { recordOf } from "./kifu";
 import { negate, winRate } from "./score";
 import { detectStrategy } from "./strategy";
@@ -146,8 +146,10 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
   let done = 0;
   for (const v of targets) {
     const id = `${game.id}:${v.ply}`;
+    const kind: ProblemKind = v.phase === "opening" ? "book" : punishable(game, v.ply) ? "punish" : "mistake";
     const prev = existing.get(id);
-    if (prev) { out.push(prev); onProgress?.(++done, targets.length); continue; }
+    // 既存の問題は学習履歴を残したまま、種類だけ最新の判定にする
+    if (prev) { out.push({ ...prev, kind }); onProgress?.(++done, targets.length); continue; }
 
     const res = await search(positionArg(game, record, v.ply), { nodes: Math.max(nodes * 2, 600_000), multipv: 3 });
     onProgress?.(++done, targets.length);
@@ -177,7 +179,7 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
     const now = Date.now();
     out.push({
       id, gameId: game.id, ply: v.ply,
-      kind: v.phase === "opening" ? "book" : "mistake",
+      kind,
       sfen: record.position.sfen,
       side: v.side,
       playedUsi: v.usi,
@@ -197,7 +199,54 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
 }
 
 export const BOOK_MAX_PLY = 40;
-export const PROBLEMS_VERSION = 3;
+export const PROBLEMS_VERSION = 8;
+
+/** ply手目(自分の手)の直前に、相手が悪手(勝率20%以上の損)を指していたか */
+function punishable(game: Game, ply: number): boolean {
+  const prev = game.verdicts?.find((x) => x.ply === ply - 1);
+  return !!prev && prev.side !== game.mySide && prev.kind === "blunder";
+}
+
+/**
+ * 咎める問題(正しく咎められた局面): 相手の悪手の直後で、実戦でも正しく指せた局面。
+ * 形を覚えるための問題なので、出題は数日後から。咎められなかった局面は buildProblems が作る。
+ */
+export async function buildPunish(game: Game, search: SearchFn, existing: Map<string, Problem>, maxPerGame = 2): Promise<Problem[]> {
+  if (!game.verdicts) return [];
+  const record = recordOf(game);
+  const out: Problem[] = [];
+  const targets = game.verdicts
+    .filter((v) => v.side !== game.mySide && (v.kind === "blunder" || v.kind === "mistake") && v.phase !== "opening")
+    .sort((a, b) => b.lossWin - a.lossWin);
+  for (const v of targets) {
+    if (out.length >= maxPerGame) break;
+    const myPly = v.ply + 1;
+    const mine = game.verdicts.find((x) => x.ply === myPly);
+    if (!mine || mine.kind || mine.missedMate) continue; // 咎め損ねた局面は悪手の問題として別にある
+    const id = `${game.id}:p${myPly}`;
+    const prev = existing.get(id);
+    if (prev) { out.push(prev); continue; }
+    const pos = positionArg(game, record, myPly);
+    const res = await search(pos, { nodes: 600_000, multipv: 3 });
+    const best = res.lines[0];
+    if (!best?.pv.length || winRate(best.score) < 0.6) continue;
+    const bestWr = winRate(best.score);
+    const answers = res.lines.filter((l) => l.pv.length && (best.score.kind === "mate" && best.score.win
+      ? l.score.kind === "mate" && l.score.win : bestWr - winRate(l.score) <= 0.04)).map((l) => l.pv[0]);
+    best.pv = await extendPv(search, pos, best.pv, best.score.kind === "mate" && best.score.win ? Math.min(best.score.v, 15) : 8);
+    record.goto(myPly - 1);
+    const now = Date.now();
+    out.push({
+      id, kind: "punish", gameId: game.id, ply: myPly,
+      sfen: record.position.sfen, side: game.mySide,
+      playedUsi: mine.usi, answers: [...new Set(answers)], bestPv: best.pv.slice(0, 15), bestScore: best.score,
+      playedScore: null, lossWin: v.lossWin, phase: mine.phase, tags: [],
+      opening: game.strategy?.label ?? "", createdAt: now,
+      due: now + 2 * 86_400_000, intervalDays: 0, ease: 2.5, reps: 0, lapses: 0, lastResult: null, history: [],
+    });
+  }
+  return out;
+}
 
 /** 問題の種類(古いデータは種類が無いので局面から判定) */
 export function problemKind(p: Problem): ProblemKind {
@@ -248,6 +297,75 @@ export async function buildTsume(game: Game, search: SearchFn, existing: Map<str
       opening: game.strategy?.label ?? "", createdAt: now,
       due: now, intervalDays: 0, ease: 2.5, reps: 0, lapses: 0, lastResult: null, history: [],
     });
+  }
+  return out;
+}
+
+/**
+ * 実戦型詰将棋(補充用): 終盤で攻めている側に、受け方の持ち駒を1枚移すと 3〜7手で詰む局面を探す。
+ * 駒の総数は変わらないので、実戦の形のまま詰将棋になる。詰将棋が少ないときだけ使う。
+ */
+export async function buildExtraTsume(game: Game, search: SearchFn, existing: Map<string, Problem>, max = 2): Promise<Problem[]> {
+  if (!game.verdicts) return [];
+  const record = recordOf(game);
+  const out: Problem[] = [];
+  const names: { [k: string]: string } = { gold: "金", silver: "銀", knight: "桂", lance: "香", rook: "飛", bishop: "角" };
+  const order = [PieceType.GOLD, PieceType.SILVER, PieceType.ROOK, PieceType.BISHOP, PieceType.KNIGHT, PieceType.LANCE];
+  // 終盤で、手番側に攻めの可能性があり(勝率30%以上)、まだ詰みは無い局面
+  const cands = game.verdicts
+    .filter((v) => v.phase === "end")
+    .map((v) => ({ v, s: game.analysis[v.ply - 1]?.lines[0]?.score }))
+    .filter((c) => c.s && c.s.kind === "cp" && winRate(c.s) >= 0.3)
+    .sort((a, b) => winRate(b.s!) - winRate(a.s!));
+  let budget = 12; // スマホで重くならないよう、探索回数を制限
+  for (const { v } of cands) {
+    if (out.length >= max || budget <= 0) break;
+    const id = `${game.id}:x${v.ply}`;
+    const prev = existing.get(id);
+    if (prev) { out.push(prev); continue; }
+    record.goto(v.ply - 1);
+    const base = record.position;
+    const atk = base.color;
+    const def = atk === Color.BLACK ? Color.WHITE : Color.BLACK;
+    for (const t of order) {
+      if (budget <= 0) break;
+      if (base.hand(def).count(t) === 0) continue;
+      budget--;
+      const pos = (base as Position).clone();
+      pos.hand(def).reduce(t, 1);
+      pos.hand(atk).add(t, 1);
+      let sfen = pos.sfen;
+      const res = await search(`sfen ${sfen}`, { nodes: 300_000 });
+      const s = res.lines[0]?.score;
+      if (!s || s.kind !== "mate" || !s.win || s.v < 3 || s.v > 15) continue;
+      let advanced = false;
+      if (s.v > 7) {
+        // 長い詰みは、詰み手順どおりに進めて残り7手の局面から出題する
+        const full = await extendPv(search, `sfen ${sfen}`, res.lines[0].pv, s.v);
+        const skip = s.v - 7;
+        if (full.length < skip) continue;
+        const r2 = Record.newByUSI(`sfen ${sfen} moves ${full.slice(0, skip).join(" ")}`);
+        if (r2 instanceof Error) continue;
+        r2.goto(r2.length);
+        sfen = r2.position.sfen;
+        advanced = true;
+      }
+      const deep = await search(`sfen ${sfen}`, { nodes: 800_000 });
+      const best = deep.lines[0];
+      if (!best || best.score.kind !== "mate" || !best.score.win || best.score.v < 3 || best.score.v > 7) continue;
+      const pv = await extendPv(search, `sfen ${sfen}`, best.pv, best.score.v);
+      const now = Date.now();
+      out.push({
+        id, kind: "tsume", mateLen: best.score.v, gameId: game.id, ply: v.ply,
+        note: `実戦の局面で、受け方の持ち駒の${names[t]}を攻め方に移しています${advanced ? "（さらに詰み手順を数手進めた局面）" : ""}。`,
+        sfen, side: atk === Color.BLACK ? "black" : "white",
+        playedUsi: "", answers: [best.pv[0]], bestPv: pv.slice(0, best.score.v), bestScore: best.score,
+        playedScore: null, lossWin: 0, phase: "end", tags: [],
+        opening: game.strategy?.label ?? "", createdAt: now,
+        due: now, intervalDays: 0, ease: 2.5, reps: 0, lapses: 0, lastResult: null, history: [],
+      });
+      break;
+    }
   }
   return out;
 }

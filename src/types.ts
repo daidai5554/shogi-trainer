@@ -72,13 +72,14 @@ export interface Game {
 
 export type ProblemTag = "blunder" | "mistake" | "missedMate" | "allowedMate";
 
-/** mistake: 自分の悪手 / book: 序盤(定跡)の確認 / tsume: 実戦の詰み局面 */
-export type ProblemKind = "mistake" | "book" | "tsume";
+/** mistake: 自分の悪手 / book: 序盤(定跡)の確認 / tsume: 実戦の詰み局面 / punish: 相手の悪手を咎める */
+export type ProblemKind = "mistake" | "book" | "tsume" | "punish";
 
 export interface Problem {
   id: string; // gameId:ply (詰将棋は gameId:tply)
   kind?: ProblemKind; // 古いデータには無い → problemKind() で判定
   mateLen?: number; // 詰将棋の手数
+  note?: string; // 問題の補足(実戦型詰将棋で駒を移した場合など)
   gameId: string;
   ply: number;
   sfen: string; // 出題局面
@@ -107,4 +108,5 @@ export interface Settings {
   usernames: string[];
   analysisNodes: number;
   threads: number;
+  speedMode?: boolean; // 早指しモード(1問30秒・詰将棋60秒)
 }

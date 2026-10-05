@@ -17,11 +17,14 @@ export async function settingsView(root: HTMLElement) {
   const threads = h("select", { class: "input" }, ...Array.from({ length: Math.min(8, maxThreads) }, (_, i) => h("option", { value: i + 1 }, `${i + 1}`))) as HTMLSelectElement;
   threads.value = String(Math.min(s.threads, maxThreads));
 
+  const speedChk = h("input", { type: "checkbox", ...(s.speedMode ? { checked: true } : {}) }) as HTMLInputElement;
+
   const save = async () => {
     await db.putSettings({
       usernames: names.value.split(/[,、\s]+/).map((x) => x.trim()).filter(Boolean),
       analysisNodes: Number(depth.value),
       threads: Number(threads.value),
+      speedMode: speedChk.checked,
     });
     toast("保存しました（スレッド数はアプリの再起動後に反映）");
   };
@@ -52,6 +55,7 @@ export async function settingsView(root: HTMLElement) {
       h("label", { class: "field" }, h("span", {}, "あなたのユーザー名（カンマ区切り）"), names,
         h("small", { class: "muted" }, "ウォーズ・クエストの名前。棋譜の先後を自動で判定します。")),
       h("label", { class: "field" }, h("span", {}, "解析の深さ"), depth),
+      h("label", { class: "check field" }, speedChk, h("span", {}, "早指しモード（練習に制限時間：1問30秒・詰将棋60秒）")),
       h("label", { class: "field" }, h("span", {}, "AIのスレッド数"), threads,
         h("small", { class: "muted" }, "多いほど速いですが、スマホが熱くなりやすくなります。")),
       h("button", { class: "btn primary", onclick: () => void save() }, "保存"),

@@ -100,6 +100,16 @@ export interface Weakness {
 const PHASE_JA: { [p in Phase]: string } = { opening: "序盤", middle: "中盤", end: "終盤" };
 export { PHASE_JA };
 
+/** 今日のトレーニングで重点を置く局面(一番の弱点から決める) */
+export function currentFocus(games: Game[], problems: Problem[]): Phase | null {
+  const w = findWeaknesses(computeStats(games, problems))[0];
+  if (!w?.train) return null;
+  const m = w.train.match(/^phase=(opening|middle|end)$/);
+  if (m) return m[1] as Phase;
+  if (w.train === "tag=missedMate" || w.train === "tag=allowedMate") return "end";
+  return null;
+}
+
 /** 集計から弱点を見つけて、重い順に並べる。 */
 export function findWeaknesses(s: Stats): Weakness[] {
   const out: Weakness[] = [];
