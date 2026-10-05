@@ -4,7 +4,7 @@ import type { Phase } from "../types";
 import { h, pct } from "../ui";
 import { emptyState } from "./common";
 import { conversionCard } from "./play";
-import { calendarCard, growthCard } from "./growth";
+import { calendarCard, growthCard, weeklyCard } from "./growth";
 
 function recText(r: Record3): string {
   const w = winPct(r);
@@ -48,6 +48,7 @@ export async function statsView(root: HTMLElement) {
           w.train ? h("a", { class: "btn small", href: `#/train?${w.train}` }, "この弱点を練習") : "")))
         : h("p", { class: "small muted" }, s.analyzedGames < 3 ? "解析済みの対局が増えると、弱点がはっきり見えてきます（目安: 5局以上）。" : "目立った弱点はありません。この調子で続けましょう。"),
     ),
+    weeklyCard(games, await db.getActivity()),
     growthCard(games),
     calendarCard(await db.getActivity()),
     conversionCard(games),

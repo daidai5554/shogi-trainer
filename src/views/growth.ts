@@ -56,6 +56,36 @@ export function growthCard(games: Game[]): HTMLElement {
   return card;
 }
 
+/** 今週(直近7日)と先週(その前の7日)の比較 */
+export function weeklyCard(games: Game[], log: ActivityLog, now = Date.now()): HTMLElement {
+  const DAY = 86_400_000;
+  const range = (from: number, to: number) => {
+    const gs = games.filter((g) => g.playedAt >= from && g.playedAt < to);
+    const wins = gs.filter((g) => g.result === "win").length;
+    const losses = gs.filter((g) => g.result === "lose").length;
+    const m = gameMetrics(gs);
+    const loss = m.length ? m.reduce((a, x) => a + x.avgLoss, 0) / m.length : null;
+    let days = 0, solved = 0;
+    for (let t = from; t < to; t += DAY) { const d = log[dateKey(t)]; if (d) { days++; solved += d.solved; } }
+    return { n: gs.length, wins, losses, loss, days, solved };
+  };
+  const cur = range(now - 7 * DAY, now + 1);
+  const prev = range(now - 14 * DAY, now - 7 * DAY);
+  const wr = (r: typeof cur) => (r.wins + r.losses ? `${Math.round((r.wins / (r.wins + r.losses)) * 100)}%` : "-");
+  const ls = (r: typeof cur) => (r.loss != null ? `${(r.loss * 100).toFixed(1)}%` : "-");
+  const better = cur.loss != null && prev.loss != null ? (cur.loss < prev.loss ? "good" : "bad") : "";
+  return h("section", { class: "card" },
+    h("h2", {}, "今週と先週"),
+    h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", {}, "今週"), h("th", {}, "先週"))),
+      h("tbody", {},
+        h("tr", {}, h("td", {}, "対局"), h("td", {}, `${cur.n}局`), h("td", {}, `${prev.n}局`)),
+        h("tr", {}, h("td", {}, "勝率"), h("td", {}, wr(cur)), h("td", {}, wr(prev))),
+        h("tr", {}, h("td", {}, "1手の損失"), h("td", { class: better }, ls(cur)), h("td", {}, ls(prev))),
+        h("tr", {}, h("td", {}, "練習した日"), h("td", {}, `${cur.days}日（${cur.solved}問）`), h("td", {}, `${prev.days}日（${prev.solved}問）`)))),
+    h("p", { class: "small muted" }, "「1手の損失」は自分の指し手1手あたり、平均で勝率を何%損したか（低いほど良い）。"));
+}
+
 /** 直近4週間の練習カレンダー */
 export function calendarCard(log: ActivityLog, now = Date.now()): HTMLElement {
   const st = streak(log, now);

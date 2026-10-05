@@ -170,9 +170,18 @@ export async function playView(root: HTMLElement, _args: string[], q: URLSearchP
 export function conversionCard(games: Game[], max = 5): HTMLElement | "" {
   const list = findConversionPositions(games).slice(0, max);
   if (!list.length) return "";
+  // AIと指し継いだ成績(非同期で読み込んで表示)
+  const playRecord = h("div", { class: "small" });
+  void db.getKV<PlayLog[]>("playLog").then((log) => {
+    const l = log ?? [];
+    if (!l.length) return;
+    const w = l.filter((x) => x.result === "win").length;
+    playRecord.textContent = `AIと指し継いだ成績: ${w}勝${l.length - w}敗`;
+  });
   return h("section", { class: "card" },
     h("h2", {}, "勝ち切り練習"),
     h("p", { class: "small muted" }, "勝率85%以上あったのに逆転された局面です。AIを相手に、今度こそ勝ち切りましょう。"),
+    playRecord,
     ...list.map((c) => h("a", { class: "list-btn", href: playHref(c.sfen, c.game.mySide, `${c.game.id}:${c.ply}`) },
       h("div", {}, h("b", {}, `vs ${c.game.mySide === "black" ? c.game.white : c.game.black}`), ` ${c.ply}手目の局面`),
       h("div", { class: "small muted" }, `その時の勝率 ${pct(c.wr)}`))));

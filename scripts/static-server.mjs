@@ -8,8 +8,8 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   if (!url.pathname.startsWith(PREFIX)) { res.writeHead(302, { Location: PREFIX }); return res.end(); }
-  let p = path.join("dist", decodeURIComponent(url.pathname.slice(PREFIX.length)));
-  if (p.endsWith(path.sep) || p === "dist") p = path.join(p, "index.html");
+  let p = path.join(process.env.DIST || "dist", decodeURIComponent(url.pathname.slice(PREFIX.length)));
+  if (p.endsWith(path.sep) || p === (process.env.DIST || "dist")) p = path.join(p, "index.html");
   fs.readFile(p, (err, data) => {
     if (err) { res.writeHead(404); return res.end("not found"); }
     res.writeHead(200, { "Content-Type": TYPES[path.extname(p)] ?? "application/octet-stream" });
