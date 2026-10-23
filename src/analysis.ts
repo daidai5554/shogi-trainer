@@ -4,10 +4,11 @@ import { Color, Move, PieceType, Position, Record, Square } from "tsshogi";
 import { recordOf } from "./kifu";
 import { negate, winRate } from "./score";
 import { detectStrategy } from "./strategy";
-import type { Game, MoveVerdict, Phase, PlyAnalysis, Problem, ProblemKind, ProblemTag, Side } from "./types";
+import { furibishaCandidates } from "./furibisha";
+import type { Game, MoveVerdict, PVLine, Phase, PlyAnalysis, Problem, ProblemKind, ProblemTag, Side } from "./types";
 import type { SearchResult } from "./engine";
 
-export type SearchFn = (position: string, opts: { nodes: number; multipv?: number }) => Promise<SearchResult>;
+export type SearchFn = (position: string, opts: { nodes: number; multipv?: number; searchmoves?: string[] }) => Promise<SearchResult>;
 
 const STANDARD_SFEN = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
 
@@ -25,8 +26,24 @@ export interface AnalyzeHooks {
   cancelled?: () => boolean;
 }
 
-/** 未解析の局面をすべて評価する。analysis[i] は (i+1)手目を指す前の局面。最後の要素は終局図。 */
-export async function analyzeGame(game: Game, search: SearchFn, nodes: number, hooks: AnalyzeHooks = {}): Promise<Game> {
+/** 局面の基準にする最善の読み(振り飛車党の設定なら、居飛車の手を除いた最善) */
+export function bestLine(a: PlyAnalysis | null | undefined): PVLine | undefined {
+  return a?.style ?? a?.lines[0];
+}
+
+/** ply手目(自分の手)を評価するときの候補手。絞り込みが要らなければ null */
+function styleCandidates(game: Game, record: Record, ply: number): string[] | null {
+  if (ply > BOOK_MAX_PLY || ply > game.usiMoves.length) return null;
+  record.goto(ply - 1);
+  if ((record.position.color === Color.BLACK ? "black" : "white") !== game.mySide) return null;
+  return furibishaCandidates(record.position, game.usiMoves[ply - 1], game.analysis[ply - 1]?.lines[0]?.pv[0]);
+}
+
+/**
+ * 未解析の局面をすべて評価する。analysis[i] は (i+1)手目を指す前の局面。最後の要素は終局図。
+ * furibisha: 序盤の自分の手は、居飛車の手を除いた最善と比べる(style に保存)。
+ */
+export async function analyzeGame(game: Game, search: SearchFn, nodes: number, hooks: AnalyzeHooks = {}, furibisha = false): Promise<Game> {
   const record = recordOf(game);
   const total = game.usiMoves.length + 1;
   if (game.analysis.length !== total) {
@@ -39,6 +56,12 @@ export async function analyzeGame(game: Game, search: SearchFn, nodes: number, h
     if (!a || a.nodes < nodes) {
       const res = await search(positionArg(game, record, i + 1), { nodes });
       game.analysis[i] = { ply: i + 1, lines: res.lines, nodes } satisfies PlyAnalysis;
+    }
+    const cur = game.analysis[i]!;
+    if (!furibisha) delete cur.style;
+    else if (cur.style === undefined) {
+      const cands = styleCandidates(game, record, i + 1);
+      cur.style = cands ? (await search(positionArg(game, record, i + 1), { nodes, searchmoves: cands })).lines[0] ?? null : null;
     }
     hooks.onProgress?.(i + 1, total);
     if (hooks.save && Date.now() - lastSave > 3000) {
@@ -87,14 +110,15 @@ export function judgeMoves(game: Game, record: Record = recordOf(game)): MoveVer
   for (let ply = 1; ply <= game.usiMoves.length; ply++) {
     const before = game.analysis[ply - 1];
     const after = game.analysis[ply];
-    if (!before || !after || !before.lines[0] || !after.lines[0]) continue;
+    const base = bestLine(before);
+    if (!before || !after || !base || !after.lines[0]) continue;
     const side: Side = ply % 2 === 1 ? sideToMoveAtStart(record) : opp(sideToMoveAtStart(record));
     const usi = game.usiMoves[ply - 1];
-    const sBefore = before.lines[0].score;
+    const sBefore = base.score;
     const sAfter = negate(after.lines[0].score);
     const wrB = winRate(sBefore);
     const wrA = winRate(sAfter);
-    const isBest = before.lines[0].pv[0] === usi;
+    const isBest = base.pv[0] === usi;
     let loss = isBest ? 0 : Math.max(0, wrB - wrA);
 
     const missedMate = !isBest && sBefore.kind === "mate" && sBefore.win && sBefore.v <= 11 && !(sAfter.kind === "mate" && sAfter.win);
@@ -148,10 +172,12 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
     const id = `${game.id}:${v.ply}`;
     const kind: ProblemKind = v.phase === "opening" ? "book" : punishable(game, v.ply) ? "punish" : "mistake";
     const prev = existing.get(id);
-    // 既存の問題は学習履歴を残したまま、種類だけ最新の判定にする
-    if (prev) { out.push({ ...prev, kind }); onProgress?.(++done, targets.length); continue; }
+    // 振り飛車党の設定: 居飛車の手を除いた中から正解を選ぶ
+    const cands = game.analysis[v.ply - 1]?.style ? styleCandidates(game, record, v.ply) : null;
+    // 既存の問題は学習履歴を残したまま、種類だけ最新の判定にする(正解が候補から外れた問題は作り直す)
+    if (prev && !(cands && prev.answers.some((a) => !cands.includes(a)))) { out.push({ ...prev, kind }); onProgress?.(++done, targets.length); continue; }
 
-    const res = await search(positionArg(game, record, v.ply), { nodes: Math.max(nodes * 2, 600_000), multipv: 3 });
+    const res = await search(positionArg(game, record, v.ply), { nodes: Math.max(nodes * 2, 600_000), multipv: 3, searchmoves: cands ?? undefined });
     onProgress?.(++done, targets.length);
     const best = res.lines[0];
     if (!best || best.pv.length === 0) continue;
@@ -177,9 +203,13 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
     record.goto(v.ply - 1);
     const after = game.analysis[v.ply];
     const now = Date.now();
+    const srs = prev
+      ? { due: prev.due, intervalDays: prev.intervalDays, ease: prev.ease, reps: prev.reps, lapses: prev.lapses, lastResult: prev.lastResult, history: prev.history, createdAt: prev.createdAt }
+      : { due: now, intervalDays: 0, ease: 2.5, reps: 0, lapses: 0, lastResult: null, history: [], createdAt: now };
     out.push({
       id, gameId: game.id, ply: v.ply,
       kind,
+      note: cands ? "振り飛車の方針での最善手を正解にしています（飛車先の歩を突く居飛車の手は除外）。" : undefined,
       sfen: record.position.sfen,
       side: v.side,
       playedUsi: v.usi,
@@ -191,8 +221,7 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
       phase: v.phase,
       tags,
       opening: game.strategy?.label ?? "",
-      createdAt: now,
-      due: now, intervalDays: 0, ease: 2.5, reps: 0, lapses: 0, lastResult: null, history: [],
+      ...srs,
     });
   }
   return out;

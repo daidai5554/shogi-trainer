@@ -1,5 +1,6 @@
 import * as db from "../db";
 import { engine } from "../engine";
+import { resumePending } from "../jobs";
 import { h, toast } from "../ui";
 
 const DEPTHS = [
@@ -18,6 +19,7 @@ export async function settingsView(root: HTMLElement) {
   threads.value = String(Math.min(s.threads, maxThreads));
 
   const speedChk = h("input", { type: "checkbox", ...(s.speedMode ? { checked: true } : {}) }) as HTMLInputElement;
+  const furiChk = h("input", { type: "checkbox", ...(s.furibisha ? { checked: true } : {}) }) as HTMLInputElement;
 
   const save = async () => {
     await db.putSettings({
@@ -25,7 +27,15 @@ export async function settingsView(root: HTMLElement) {
       analysisNodes: Number(depth.value),
       threads: Number(threads.value),
       speedMode: speedChk.checked,
+      furibisha: furiChk.checked,
     });
+    if (!!s.furibisha !== furiChk.checked) {
+      s.furibisha = furiChk.checked;
+      // 戦法の設定が変わったら、解析済みの対局から問題を作り直す
+      void resumePending();
+      toast("保存しました。対局の判定と問題を作り直します");
+      return;
+    }
     toast("保存しました（スレッド数はアプリの再起動後に反映）");
   };
 
@@ -55,6 +65,7 @@ export async function settingsView(root: HTMLElement) {
       h("label", { class: "field" }, h("span", {}, "あなたのユーザー名（カンマ区切り）"), names,
         h("small", { class: "muted" }, "ウォーズ・クエストの名前。棋譜の先後を自動で判定します。")),
       h("label", { class: "field" }, h("span", {}, "解析の深さ"), depth),
+      h("label", { class: "check field" }, furiChk, h("span", {}, "振り飛車党（序盤で飛車先の歩を突く居飛車の手を正解にせず、振り飛車の範囲での最善手で判定）")),
       h("label", { class: "check field" }, speedChk, h("span", {}, "早指しモード（練習に制限時間：1問30秒・詰将棋60秒）")),
       h("label", { class: "field" }, h("span", {}, "AIのスレッド数"), threads,
         h("small", { class: "muted" }, "多いほど速いですが、スマホが熱くなりやすくなります。")),

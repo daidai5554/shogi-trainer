@@ -20,6 +20,8 @@ export interface PlyAnalysis {
   ply: number; // この局面から指される手の手数(1始まり)
   lines: PVLine[]; // MultiPV。lines[0]が最善
   nodes: number;
+  /** 振り飛車党の設定のとき: 居飛車の手を除いた最善(null=絞り込み不要、undefined=未確認) */
+  style?: PVLine | null;
 }
 
 export type MistakeKind = "blunder" | "mistake" | "dubious";
@@ -68,6 +70,7 @@ export interface Game {
   analysisDone: boolean;
   verdicts: MoveVerdict[] | null;
   problemsVersion?: number; // 問題作成ロジックの版。上がったら作り直す
+  problemsStyle?: "furibisha" | "any"; // 問題を作ったときの戦法の設定。変わったら作り直す
 }
 
 export type ProblemTag = "blunder" | "mistake" | "missedMate" | "allowedMate";
@@ -109,4 +112,5 @@ export interface Settings {
   analysisNodes: number;
   threads: number;
   speedMode?: boolean; // 早指しモード(1問30秒・詰将棋60秒)
+  furibisha?: boolean; // 振り飛車党: 序盤で居飛車の手を正解にしない
 }

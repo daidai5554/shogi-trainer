@@ -1,6 +1,6 @@
 // 対局の振り返り画面: 評価値グラフ・盤面・悪手一覧・AIの読み筋。
 import { Color, Record } from "tsshogi";
-import { extendPv, usiToJapanese } from "../analysis";
+import { bestLine, extendPv, usiToJapanese } from "../analysis";
 import { engine } from "../engine";
 import { BoardView, type Arrow } from "../board";
 import * as db from "../db";
@@ -179,7 +179,7 @@ export async function gameView(root: HTMLElement, args: string[]) {
     // 矢印は「直前の手」について: 緑=AIが推奨した手、赤=実戦で指した手(悪手などのとき)
     const arrows: Arrow[] = [];
     if (showBest && ply > 0) {
-      const best = g.analysis[ply - 1]?.lines[0]?.pv[0];
+      const best = bestLine(g.analysis[ply - 1])?.pv[0];
       const played = g.usiMoves[ply - 1];
       if (best && best !== played) {
         arrows.push({ usi: best, color: "best" });
@@ -287,17 +287,19 @@ export async function gameView(root: HTMLElement, args: string[]) {
           v.lossWin >= 0.01 ? `・勝率 −${pct(v.lossWin)}` : ""));
       }
       const before = g.analysis[ply - 1];
-      const best = before?.lines[0];
+      const best = bestLine(before);
+      const free = before?.lines[0];
       if (best && best.pv.length && best.pv[0] !== g.usiMoves[ply - 1]) {
         record.goto(ply - 1);
         const sfen = record.position.sfen;
         parts.push(h("div", { class: "best" },
-          h("div", {}, h("span", { class: "label best" }, "AIの推奨"), ` ${usiToJapanese(sfen, best.pv, 1)[0] ?? ""}`, h("span", { class: "muted" }, `（${scoreText(mine ? best.score : negate(best.score))}）`)),
+          h("div", {}, h("span", { class: "label best" }, before?.style ? "AIの推奨（振り飛車）" : "AIの推奨"), ` ${usiToJapanese(sfen, best.pv, 1)[0] ?? ""}`, h("span", { class: "muted" }, `（${scoreText(mine ? best.score : negate(best.score))}）`)),
+          before?.style && free?.pv[0] ? h("div", { class: "small muted" }, `※居飛車も含めた最善は ${usiToJapanese(sfen, free.pv, 1)[0] ?? ""}（${scoreText(free.score)}）`) : "",
           pvLine(sfen, best.pv, `${ply}手目のAI推奨手順`),
           v && (v.kind || v.missedMate || v.allowedMate) ? askButton(v, sfen, best.score, best.pv) : ""));
         record.goto(ply);
       } else if (best && best.pv[0] === g.usiMoves[ply - 1]) {
-        parts.push(h("div", { class: "small good" }, "AIの最善手と一致"));
+        parts.push(h("div", { class: "small good" }, before?.style ? "振り飛車での最善手と一致" : "AIの最善手と一致"));
       }
     }
     // 現在局面のAIの読み

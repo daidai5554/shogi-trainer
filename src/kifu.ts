@@ -99,6 +99,33 @@ export function hasLegalMove(pos: ImmutablePosition): boolean {
   return false;
 }
 
+/** 合法手をすべて USI で返す(成り・不成の両方があれば両方)。 */
+export function legalUsiMoves(pos: ImmutablePosition): string[] {
+  const p = pos as Position;
+  const out: string[] = [];
+  for (const from of Square.all) {
+    const piece = p.board.at(from);
+    if (!piece || piece.color !== p.color) continue;
+    for (const to of Square.all) {
+      const m = p.createMove(from, to);
+      if (!m) continue;
+      if (p.isValidMove(m)) out.push(m.usi);
+      const pm = m.withPromote();
+      if (pm.usi !== m.usi && p.isValidMove(pm)) out.push(pm.usi);
+    }
+  }
+  const hand = p.hand(p.color);
+  for (const t of handPieceTypes) {
+    if (hand.count(t) === 0) continue;
+    for (const to of Square.all) {
+      if (p.board.at(to)) continue;
+      const m = p.createMove(t as PieceType, to);
+      if (m && p.isValidMove(m)) out.push(m.usi);
+    }
+  }
+  return out;
+}
+
 function sideOf(c: Color): Side {
   return c === Color.BLACK ? "black" : "white";
 }

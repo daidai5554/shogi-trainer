@@ -138,7 +138,7 @@ class Engine {
   /**
    * 局面を探索する。position は "sfen ..." または "startpos moves ..." 形式。
    */
-  search(position: string, opts: { nodes: number; multipv?: number }): Promise<SearchResult> {
+  search(position: string, opts: { nodes: number; multipv?: number; searchmoves?: string[] }): Promise<SearchResult> {
     const run = async () => {
       if (!this.mod) throw new Error("AIが読み込まれていません");
       const mod = this.mod;
@@ -160,7 +160,8 @@ class Engine {
           }
         };
         mod.postMessage(`position ${position}`);
-        mod.postMessage(`go nodes ${opts.nodes}`);
+        // searchmoves: 候補手をこの中に絞って探索する(go コマンドの最後に置く)
+        mod.postMessage(`go nodes ${opts.nodes}${opts.searchmoves?.length ? " searchmoves " + opts.searchmoves.join(" ") : ""}`);
       });
       const sorted = [...lines.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]).filter((l) => l.pv.length > 0);
       if (bestmove === "resign" || bestmove === "win") {

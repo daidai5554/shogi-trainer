@@ -3,7 +3,7 @@ import { PROBLEMS_VERSION, analyzeGame, buildExtraTsume, buildProblems, buildPun
 import { isMastered } from "./srs";
 import * as db from "./db";
 import { engine } from "./engine";
-import type { Game } from "./types";
+import type { Game, Settings } from "./types";
 
 export interface JobStatus {
   gameId: string | null;
@@ -48,10 +48,15 @@ export function enqueue(gameId: string, front = false, nodes?: number) {
 
 /** 未解析の対局をすべて順番待ちに入れる(起動時) */
 export async function resumePending() {
-  // 未解析の対局と、問題作成のルールが古い対局(解析結果は再利用するので速い)
+  // 未解析の対局と、問題作成のルール・戦法の設定が変わった対局(解析結果は再利用するので速い)
+  const style = styleOf(await db.getSettings());
   for (const g of await db.allGames()) {
-    if (!g.analysisDone || (g.problemsVersion ?? 1) < PROBLEMS_VERSION) enqueue(g.id);
+    if (!g.analysisDone || (g.problemsVersion ?? 1) < PROBLEMS_VERSION || (g.problemsStyle ?? "any") !== style) enqueue(g.id);
   }
+}
+
+function styleOf(s: Settings): "furibisha" | "any" {
+  return s.furibisha ? "furibisha" : "any";
 }
 
 async function acquireWakeLock() {
@@ -86,7 +91,7 @@ async function run() {
       game = await analyzeGame(game, search, nodes, {
         onProgress: (d, t) => { status = { ...status, done: d, total: t }; emit(); },
         save: (g) => db.putGame(g),
-      });
+      }, !!settings.furibisha);
       await db.putGame(game);
 
       status = { ...status, label: `vs ${opp} の問題を作成中`, done: 0, total: 1 };
@@ -109,6 +114,7 @@ async function run() {
       for (const p of probs) await db.putProblem(p);
       for (const old of existing.values()) if (!keep.has(old.id)) await db.deleteProblem(old.id);
       game.problemsVersion = PROBLEMS_VERSION;
+      game.problemsStyle = styleOf(settings);
       await db.putGame(game);
       const g2 = game;
       finishListeners.forEach((f) => f(g2, fresh));

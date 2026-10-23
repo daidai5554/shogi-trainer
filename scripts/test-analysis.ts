@@ -32,19 +32,20 @@ const search: SearchFn = (position, opts) => new Promise((resolve) => {
     }
   };
   mod.postMessage(`position ${position}`);
-  mod.postMessage(`go nodes ${opts.nodes}`);
+  mod.postMessage(`go nodes ${opts.nodes}${opts.searchmoves?.length ? " searchmoves " + opts.searchmoves.join(" ") : ""}`);
 });
 
 const { game, mySideKnown } = importGame(fs.readFileSync(file, "utf8"), (process.env.USERNAMES ?? "").split(","));
 console.log({ source: game.source, black: game.black, white: game.white, mySide: game.mySide, mySideKnown, result: game.result, reason: game.resultReason, limit: game.timeLimitMs, rate: [game.blackRating, game.whiteRating] });
 const t0 = Date.now();
-await analyzeGame(game, search, nodes, { onProgress: (d, t) => { if (d % 20 === 0) process.stdout.write(`${d}/${t} `); } });
+await analyzeGame(game, search, nodes, { onProgress: (d, t) => { if (d % 20 === 0) process.stdout.write(`${d}/${t} `); } }, process.env.FURIBISHA !== "0");
 console.log(`\nanalysis ${(Date.now() - t0) / 1000}s`, game.strategy);
 const marks = { blunder: "??", mistake: "?", dubious: "?!" } as const;
 for (const v of game.verdicts!) {
   if (!v.kind && !v.missedMate && !v.allowedMate) continue;
   const a = game.analysis[v.ply - 1]!;
-  console.log(`${v.ply}${v.side === game.mySide ? "(自)" : "(相)"} ${v.usi} ${v.kind ? marks[v.kind] : ""} loss=${(v.lossWin * 100).toFixed(0)}% ${v.phase} best=${a.lines[0].pv[0]} ${scoreText(a.lines[0].score)}${v.missedMate ? " 詰み逃し" : ""}${v.allowedMate ? " 頓死" : ""} 残${v.remainingMs != null ? Math.round(v.remainingMs / 1000) + "s" : "-"} 考${v.elapsedMs / 1000}s`);
+  const st = a.style ? ` 振り飛車での最善=${a.style.pv[0]} ${scoreText(a.style.score)}` : "";
+  console.log(`${v.ply}${v.side === game.mySide ? "(自)" : "(相)"} ${v.usi} ${v.kind ? marks[v.kind] : ""} loss=${(v.lossWin * 100).toFixed(0)}% ${v.phase} best=${a.lines[0].pv[0]} ${scoreText(a.lines[0].score)}${v.missedMate ? " 詰み逃し" : ""}${v.allowedMate ? " 頓死" : ""} 残${v.remainingMs != null ? Math.round(v.remainingMs / 1000) + "s" : "-"} 考${v.elapsedMs / 1000}s${st}`);
 }
 const probs = await buildProblems(game, search, nodes, new Map());
 for (const p of probs) console.log("問題", p.ply, p.tags.join(","), "正解:", usiToJapanese(p.sfen, p.answers.slice(0, 1)).join(), "候補", p.answers.length, "読み:", usiToJapanese(p.sfen, p.bestPv, 6).join(" "));

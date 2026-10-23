@@ -70,6 +70,7 @@ export async function problemsOfGame(gameId: string): Promise<Problem[]> {
 const DEFAULT_SETTINGS: Settings = {
   usernames: [],
   analysisNodes: 300_000,
+  furibisha: true,
   threads: Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)),
 };
 

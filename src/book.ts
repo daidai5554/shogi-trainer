@@ -1,7 +1,7 @@
 // 定跡ツリー: 自分の対局を局面ごとにまとめる(手順が違っても同じ局面なら合流)。
 import { Color } from "tsshogi";
 import { recordOf } from "./kifu";
-import { BOOK_MAX_PLY } from "./analysis";
+import { BOOK_MAX_PLY, bestLine } from "./analysis";
 import type { Game, Score, Side } from "./types";
 
 export interface BookEdge {
@@ -91,7 +91,7 @@ export function buildBook(games: Game[], side: Side, maxPly = BOOK_MAX_PLY): Boo
       node.count++;
       node.wins += win;
       node.losses += loss;
-      const a = g.analysis[ply]?.lines[0];
+      const a = bestLine(g.analysis[ply]);
       if (!node.aiBest && a?.pv[0]) { node.aiBest = a.pv[0]; node.aiScore = a.score; }
       if (ply === limit) break;
 

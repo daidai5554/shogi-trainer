@@ -195,7 +195,7 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
     const feedback = h("div", { class: "feedback" });
     const buttons = h("div", { class: "row" });
     const timerEl = h("span", {});
-    container.replaceChildren(tags, promptEl, timerEl, board.el, feedback, buttons, source);
+    container.replaceChildren(tags, promptEl, p.note ? h("p", { class: "small muted" }, p.note) : "", timerEl, board.el, feedback, buttons, source);
     startTimer(30, timerEl, async () => {
       if (attempted) return;
       attempted = true;
