@@ -1,8 +1,9 @@
 // IndexedDB の薄いラッパー。データはすべてこの端末の中だけに保存する。
 import type { Game, Problem, Settings } from "./types";
+import type { SearchResult } from "./engine";
 
 const DB_NAME = "shogi-trainer";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -18,8 +19,16 @@ function open(): Promise<IDBDatabase> {
         s.createIndex("gameId", "gameId");
       }
       if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv");
+      if (!db.objectStoreNames.contains("searchCache")) {
+        const s = db.createObjectStore("searchCache");
+        s.createIndex("gameId", "gameId");
+      }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // 新しい版のアプリが開かれたら、古い接続を閉じて更新を妨げない
+      req.result.onversionchange = () => { req.result.close(); dbPromise = null; };
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
   });
   return dbPromise;
@@ -49,6 +58,21 @@ export async function allGames(): Promise<Game[]> {
 export async function deleteGame(id: string): Promise<void> {
   await wrap((await store("games", "readwrite")).delete(id));
   for (const p of await problemsOfGame(id)) await deleteProblem(p.id);
+  await deleteSearchCacheOfGame(id);
+}
+
+/** 問題作成で使ったAIの読みの保存(作り直しのときに読み直さずに済むように) */
+export interface CachedSearch { gameId: string; nodes: number; res: SearchResult; }
+export async function getSearchCache(key: string): Promise<CachedSearch | undefined> {
+  return wrap((await store("searchCache")).get(key));
+}
+export async function putSearchCache(key: string, v: CachedSearch): Promise<void> {
+  await wrap((await store("searchCache", "readwrite")).put(v, key));
+}
+export async function deleteSearchCacheOfGame(gameId: string): Promise<void> {
+  const s = await store("searchCache", "readwrite");
+  const keys = await wrap(s.index("gameId").getAllKeys(gameId));
+  for (const k of keys) s.delete(k);
 }
 
 export async function getProblem(id: string): Promise<Problem | undefined> {

@@ -1,5 +1,5 @@
 // 解析ジョブの順番待ち。アプリを開いている間、裏で1局ずつ解析する。
-import { PROBLEMS_VERSION, analyzeGame, buildExtraTsume, buildProblems, buildPunish, buildTsume } from "./analysis";
+import { PROBLEMS_VERSION, type SearchFn, analyzeGame, buildExtraTsume, buildProblems, buildPunish, buildTsume } from "./analysis";
 import { isMastered } from "./srs";
 import * as db from "./db";
 import { engine } from "./engine";
@@ -55,6 +55,21 @@ export async function resumePending() {
   }
 }
 
+/**
+ * 読んだ結果を端末に保存しておく探索。同じ局面・同じ条件を同じ深さ以上で読んだことがあれば読み直さない。
+ * アップデートで問題を作り直すときや、途中で閉じて再開したときに速くなる。
+ */
+function cachedSearch(gameId: string, search: SearchFn): SearchFn {
+  return async (position, opts) => {
+    const key = `${opts.multipv ?? 1}|${[...(opts.searchmoves ?? [])].sort().join(",")}|${position}`;
+    const hit = await db.getSearchCache(key).catch(() => undefined);
+    if (hit && hit.nodes >= opts.nodes) return structuredClone(hit.res);
+    const res = await search(position, opts);
+    await db.putSearchCache(key, { gameId, nodes: opts.nodes, res: structuredClone(res) }).catch(() => {});
+    return res;
+  };
+}
+
 function styleOf(s: Settings): "furibisha" | "any" {
   return s.furibisha ? "furibisha" : "any";
 }
@@ -97,18 +112,19 @@ async function run() {
       status = { ...status, label: `vs ${opp} の問題を作成中`, done: 0, total: 1 };
       emit();
       const existing = new Map((await db.problemsOfGame(id)).map((p) => [p.id, p]));
-      const probs = await buildProblems(game, search, nodes, existing, (d, t) => { status = { ...status, done: d, total: t }; emit(); });
+      const cached = cachedSearch(id, search);
+      const probs = await buildProblems(game, cached, nodes, existing, (d, t) => { status = { ...status, done: d, total: t }; emit(); });
       status = { ...status, label: `vs ${opp} から詰将棋を探し中`, done: 0, total: 1 };
       emit();
-      probs.push(...await buildTsume(game, search, existing));
-      probs.push(...await buildPunish(game, search, existing));
+      probs.push(...await buildTsume(game, cached, existing));
+      probs.push(...await buildPunish(game, cached, existing));
       // 詰将棋が少ないときは、実戦型詰将棋で補充する
       const tsumeLeft = (await db.allProblems()).filter((p) => p.kind === "tsume" && p.gameId !== id && !isMastered(p)).length
         + probs.filter((p) => p.kind === "tsume").length;
       if (tsumeLeft < 15 || [...existing.keys()].some((k) => k.includes(":x"))) {
         status = { ...status, label: `vs ${opp} から実戦型詰将棋を作成中` };
         emit();
-        probs.push(...await buildExtraTsume(game, search, existing));
+        probs.push(...await buildExtraTsume(game, cached, existing));
       }
       const keep = new Set(probs.map((p) => p.id));
       for (const p of probs) await db.putProblem(p);
