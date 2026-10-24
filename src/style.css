@@ -15,6 +15,7 @@
   --best: #1f9d55;
   --played: #d64541;
   --pv: #2f6fd6;
+  --yours: #e08a1e;
   --tab-h: 60px;
   color-scheme: light;
 }
@@ -219,9 +220,11 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; }
 .arrow.best { stroke: var(--best); }
 .arrow.played { stroke: var(--played); opacity: 0.65; }
 .arrow.pv { stroke: var(--pv); }
+.arrow.yours { stroke: var(--yours); opacity: 0.75; }
 .arrow-head.best { fill: var(--best); }
 .arrow-head.played { fill: var(--played); }
 .arrow-head.pv { fill: var(--pv); }
+.arrow-head.yours { fill: var(--yours); }
 .promo-dialog {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;
@@ -257,6 +260,7 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; }
 .label { font-size: 0.72rem; padding: 1px 6px; border-radius: 4px; color: #fff; }
 .label.best { background: var(--best); }
 .label.played { background: var(--played); }
+.label.yours { background: var(--yours); }
 .pv { margin-top: 4px; }
 .pv-moves { color: var(--muted); font-size: 0.85rem; word-break: keep-all; overflow-wrap: anywhere; }
 details { margin-top: 8px; }

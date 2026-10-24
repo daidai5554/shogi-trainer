@@ -14,7 +14,7 @@ import { h } from "./ui";
 
 export interface Arrow {
   usi: string;
-  color: "best" | "played" | "pv";
+  color: "best" | "played" | "pv" | "yours";
 }
 
 export interface BoardOptions {
@@ -171,7 +171,7 @@ export class BoardView {
     svg.setAttribute("viewBox", "0 0 9 9");
     svg.setAttribute("class", "arrows");
     const defs = document.createElementNS(ns, "defs");
-    for (const c of ["best", "played", "pv"]) {
+    for (const c of ["best", "played", "pv", "yours"]) {
       const marker = document.createElementNS(ns, "marker");
       marker.setAttribute("id", "ah-" + c);
       marker.setAttribute("viewBox", "0 0 10 10");

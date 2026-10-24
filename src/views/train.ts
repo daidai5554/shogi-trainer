@@ -1,7 +1,7 @@
 // 練習画面。「今日のトレーニング」(定跡確認・悪手の復習・詰将棋を少しずつ)と、テーマ別練習。
 import { Color, Move, Position, Record, Square, pieceTypeToStringForMove } from "tsshogi";
 import { problemKind, usiToJapanese } from "../analysis";
-import { BoardView } from "../board";
+import { BoardView, type Arrow } from "../board";
 import * as db from "../db";
 import { engine } from "../engine";
 import { askClaude } from "../explain";
@@ -12,7 +12,7 @@ import { loadTree, pickDrillSide, runLineDrill } from "./linedrill";
 import { conversionCard } from "./play";
 import { grade } from "../srs";
 import { PHASE_JA, currentFocus } from "../stats";
-import type { Problem, ProblemKind } from "../types";
+import type { Problem, ProblemKind, Score } from "../types";
 import { fmtDate, h } from "../ui";
 import { emptyState } from "./common";
 
@@ -206,12 +206,22 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
     const ja = (usis: string[], n = 1) => usiToJapanese(p.sfen, usis, n);
     // 実戦の手の後の、相手の好手(AIの読み)。実戦の手のどこが悪いかがわかる
     const refute = kind !== "punish" && game ? (game.analysis[p.ply]?.lines[0]?.pv ?? []).slice(0, 5) : [];
+    /** 指した手をAIで読んだ結果(評価は自分から見た値、pv はその手の後の読み筋) */
+    let yours: { score: Score; pv: string[] } | null = null;
     const showAnswer = (ok: boolean, played: string | null, note = "") => {
       stopTimer();
       const best = p.bestPv[0];
+      const wrong = !ok && played != null && !p.answers.includes(played);
+      const sameAsGame = played === p.playedUsi;
+      const yourLine = wrong && !sameAsGame && yours ? yours : null;
       feedback.replaceChildren(
         h("div", { class: `verdict ${ok ? "ok" : "ng"}` }, ok ? "◯ 正解" + note : "✕ 不正解"),
-        played && played !== best ? h("div", {}, `あなたの手: ${ja([played])[0] ?? played}`) : "",
+        played && played !== best ? h("div", {},
+          h("span", { class: "label yours" }, "あなた"), ` ${ja([played])[0] ?? played}`,
+          sameAsGame ? h("span", { class: "muted" }, "（実戦と同じ手）")
+            : yourLine ? `（評価 ${scoreText(yourLine.score)}、勝率 −${Math.round(Math.max(0, winRate(p.bestScore) - winRate(yourLine.score)) * 100)}%）`
+              : wrong ? h("span", { class: "muted" }, "（AIの準備ができていないため評価できませんでした）") : "") : "",
+        yourLine?.pv.length ? h("div", { class: "small refute" }, "あなたの手だと → ", h("b", {}, usiToJapanese(p.sfen, [played!, ...yourLine.pv], 9).slice(1).join(" ")), h("span", { class: "muted" }, "（AIの読み）")) : "",
         h("div", {}, h("span", { class: "label best" }, "正解"), ` ${ja([best])[0]}（評価 ${scoreText(p.bestScore)}）`,
           p.answers.length > 1 ? h("span", { class: "muted" }, `　ほかに ${p.answers.filter((a) => a !== best).map((a) => ja([a])[0]).join("・")} も可`) : ""),
         h("div", {}, h("span", { class: "label played" }, "実戦"), ` ${ja([p.playedUsi])[0]}`,
@@ -226,11 +236,21 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
             phase: p.phase, opening: p.opening,
             myRating: game ? (p.side === "black" ? game.blackRating : game.whiteRating) : undefined,
             missedMate: p.tags.includes("missedMate"), allowedMate: p.tags.includes("allowedMate"),
+            yourUsi: yourLine ? played! : undefined, yourScore: yourLine?.score, yourPv: yourLine?.pv,
           }),
         }, "💬 Claudeに解説してもらう"),
       );
-      board.update(record.position, { ...names, arrows: [{ usi: best, color: "best" }, { usi: p.playedUsi, color: "played" }] });
-      buttons.replaceChildren(...pvButtons(p, board, names), nextButton());
+      const arrows: Arrow[] = [{ usi: best, color: "best" }, { usi: p.playedUsi, color: "played" }];
+      if (yourLine) arrows.push({ usi: played!, color: "yours" });
+      const start = () => board.update(record.position, { ...names, arrows });
+      start();
+      // 盤で再生できる分岐: 正解の読み筋・あなたの手・実戦の手
+      const branches: Branch[] = [{ label: "正解の手順", moves: p.bestPv }];
+      if (yourLine) branches.push({ label: "あなたの手", moves: [played!, ...yourLine.pv] });
+      if (refute.length) branches.push({ label: "実戦の手", moves: [p.playedUsi, ...refute] });
+      const pv = pvButtons(p.sfen, branches, board, names, start);
+      feedback.append(pv.segs);
+      buttons.replaceChildren(...pv.buttons, nextButton());
     };
 
     /** 正解リストに無い手は、AIで評価して最善とほぼ同じなら正解(別解)とする */
@@ -240,6 +260,7 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
       const res = await engine.search(`sfen ${p.sfen} moves ${usi}`, { nodes: 300_000 });
       const s = res.lines[0] ? negate(res.lines[0].score) : null;
       if (!s) return null;
+      yours = { score: s, pv: res.lines[0].pv.slice(0, 10) };
       if (p.bestScore.kind === "mate" && p.bestScore.win) return s.kind === "mate" && s.win;
       return winRate(p.bestScore) - winRate(s) <= 0.04;
     };
@@ -295,15 +316,19 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
       movesEl.textContent = moves.length ? usiToJapanese(p.sfen, moves).join(" ") : "";
     };
 
-    const end = async (ok: boolean, msg: string) => {
+    /** after: 不正解のとき、指した手順の後のAIの読み(評価は攻め方から見た値) */
+    const end = async (ok: boolean, msg: string, after?: { score: Score; pv: string[] }) => {
       if (finished) return;
       finished = true;
       stopTimer();
       await record1(p, ok && !hintUsed);
       redraw(false);
+      const yourMoves = !ok && moves.length ? [...moves, ...(after?.pv ?? [])] : [];
       feedback.replaceChildren(
         h("div", { class: `verdict ${ok ? "ok" : "ng"}` }, ok ? `◯ 詰みました${hintUsed ? "（ヒントあり）" : ""}` : "✕ 不正解"),
         msg ? h("div", { class: "small" }, msg) : "",
+        after ? h("div", {}, h("span", { class: "label yours" }, "あなた"), ` ${usiToJapanese(p.sfen, moves).join(" ")}（評価 ${scoreText(after.score)}）`) : "",
+        after?.pv.length ? h("div", { class: "small refute" }, "その後 → ", h("b", {}, usiToJapanese(p.sfen, yourMoves).slice(moves.length).join(" ")), h("span", { class: "muted" }, "（AIの読み・相手の受け）")) : "",
         h("div", {}, h("span", { class: "label best" }, "正解手順"), " " + usiToJapanese(p.sfen, p.bestPv).join(" ")),
         h("button", {
           class: "btn small ask", onclick: () => askClaude({
@@ -313,7 +338,11 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
           }),
         }, "💬 Claudeに解説してもらう"),
       );
-      buttons.replaceChildren(...pvButtons(p, board, names), nextButton());
+      const branches: Branch[] = [{ label: "正解手順", moves: p.bestPv }];
+      if (yourMoves.length) branches.push({ label: "あなたの手順", moves: yourMoves });
+      const pv = pvButtons(p.sfen, branches, board, names, () => redraw(false));
+      feedback.append(pv.segs);
+      buttons.replaceChildren(...pv.buttons, nextButton());
     };
 
     const onMove = async (m: Move) => {
@@ -335,7 +364,9 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
           const res = await engine.search(`sfen ${p.sfen} moves ${moves.join(" ")}`, { nodes: 300_000 });
           const s = res.lines[0]?.score;
           // 受ける側から見て「left手以内に詰まされる」なら正解の続き
-          if (!s || s.kind !== "mate" || s.win || s.v > left) return await end(false, "その手では詰みません。");
+          if (!s || s.kind !== "mate" || s.win || s.v > left) {
+            return await end(false, "その手では詰みません。", s ? { score: negate(s), pv: res.lines[0].pv.slice(0, 8) } : undefined);
+          }
           reply = res.bestmove;
         } else if (p.bestPv[moves.length - 1] === m.usi) {
           // AIが使えないときは、正解手順と同じ手だけを認める
@@ -383,20 +414,40 @@ function hintText(pos: Position, usi: string): string {
   return piece ? `ヒント: ${pieceTypeToStringForMove(piece.type)}を動かします。` : "ヒント: 持ち駒を打つ手です。";
 }
 
-/** 正解の読み筋を盤上で1手ずつ再生するボタン */
-function pvButtons(p: Problem, board: BoardView, names: { flipped: boolean; blackName?: string; whiteName?: string }): HTMLElement[] {
+interface Branch { label: string; moves: string[]; }
+
+/**
+ * 読み筋を盤上で1手ずつ再生するボタン。分岐が複数あるときは切り替えボタン(segs)も作る。
+ * 0手目に戻ったら reset で最初の表示(矢印つき)に戻す。
+ */
+function pvButtons(sfen: string, branches: Branch[], board: BoardView, names: { flipped: boolean; blackName?: string; whiteName?: string }, reset: () => void): { segs: HTMLElement | ""; buttons: HTMLElement[] } {
   let idx = 0;
-  const rec = Record.newByUSI(`sfen ${p.sfen} moves ${p.bestPv.join(" ")}`);
+  let cur = 0;
+  const recs = branches.map((b) => Record.newByUSI(`sfen ${sfen} moves ${b.moves.join(" ")}`));
   const step = (d: number) => {
+    const rec = recs[cur];
+    const mv = branches[cur].moves;
     if (rec instanceof Error) return;
-    idx = Math.max(0, Math.min(p.bestPv.length, idx + d));
+    idx = Math.max(0, Math.min(mv.length, idx + d));
+    if (idx === 0) return reset();
     rec.goto(idx);
-    board.update(rec.position, { ...names, lastMoveUsi: idx ? p.bestPv[idx - 1] : null, arrows: p.bestPv[idx] ? [{ usi: p.bestPv[idx], color: "pv" }] : [] });
+    board.update(rec.position, { ...names, lastMoveUsi: mv[idx - 1], arrows: mv[idx] ? [{ usi: mv[idx], color: "pv" }] : [] });
   };
-  return [
-    h("button", { class: "btn", onclick: () => step(-1) }, "◀"),
-    h("button", { class: "btn", onclick: () => step(1) }, "手順 ▶"),
-  ];
+  const segEls = branches.map((b, i) => h("button", {
+    class: "seg" + (i === cur ? " active" : ""), onclick: () => {
+      cur = i;
+      idx = 0;
+      segEls.forEach((el, j) => el.classList.toggle("active", j === i));
+      step(1);
+    },
+  }, b.label));
+  return {
+    segs: branches.length > 1 ? h("div", { class: "segs branch-segs" }, ...segEls) : "",
+    buttons: [
+      h("button", { class: "btn", onclick: () => step(-1) }, "◀"),
+      h("button", { class: "btn", onclick: () => step(1) }, "手順 ▶"),
+    ],
+  };
 }
 
 function themeMenu(all: Problem[]): HTMLElement {

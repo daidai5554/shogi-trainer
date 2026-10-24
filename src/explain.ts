@@ -27,6 +27,10 @@ export interface ExplainInput {
   /** 相手の悪手のとき: 次に自分が指すべき手順(悪手の後の局面から) */
   punishPv?: string[];
   punishScore?: Score; // 自分から見た評価
+  /** 練習で私が指した(間違えた)手と、その後のAIの読み */
+  yourUsi?: string;
+  yourScore?: Score; // 私から見た、指した後の評価
+  yourPv?: string[];
 }
 
 function bod(sfen: string, moves: string[] = []): string {
@@ -71,6 +75,11 @@ export function buildPrompt(x: ExplainInput): string {
     const after = usiToJapanese(x.sfen, [playedUsi, ...x.punishPv], 13).slice(1);
     lines.push(`【実戦の手の後、私の最善の応手】${after.join(" ")}${x.punishScore ? `（私から見た評価値 ${scoreText(x.punishScore)}）` : ""}`);
   }
+  if (x.yourUsi) {
+    const y = usiToJapanese(x.sfen, [x.yourUsi, ...(x.yourPv ?? [])], 9);
+    lines.push(`【練習で私が指した手】${y[0] ?? x.yourUsi}${x.yourScore ? `（指した後の評価値 ${scoreText(x.yourScore)}、私から見た値）` : ""}`);
+    if (y.length > 1) lines.push(`【その手の後のAIの読み】${y.slice(1).join(" ")}`);
+  }
   if (x.missedMate) lines.push("※ この局面には詰みがありましたが、実戦では見逃しました。");
   if (x.allowedMate) lines.push("※ 実戦の手で、相手に詰みが生じました（頓死）。");
   lines.push("");
@@ -82,6 +91,7 @@ export function buildPrompt(x: ExplainInput): string {
     } else {
       lines.push("1. 実戦の手の何がまずかったのか（相手のどんな狙いが通ってしまうか）を具体的に");
       lines.push("2. 最善手の意味と、その後どういう方針で指せばよいか");
+      if (x.yourUsi) lines.push("※ 練習で私が指した手が良くない理由も、AIの読みをもとに説明してください");
     }
     lines.push("3. 似た局面で使える考え方・手筋・格言を1つ");
   } else {
