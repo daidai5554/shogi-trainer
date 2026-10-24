@@ -58,7 +58,8 @@ export async function homeView(root: HTMLElement) {
             h("div", { class: "weak-title" }, `${i + 1}. ${w.title}`),
             h("div", { class: "small muted" }, w.detail),
             h("div", { class: "small" }, w.advice))),
-          h("a", { class: "link", href: "#/stats" }, "詳しい分析を見る →"))
+          h("a", { class: "link", href: "#/stats" }, "詳しい分析を見る →"), "　",
+          h("a", { class: "link", href: "#/skill" }, "実力の推移 →"))
         : "",
       games.length
         ? h("section", { class: "card" },

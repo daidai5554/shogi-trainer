@@ -19,6 +19,7 @@ function bar(value: number, max: number, cls = ""): HTMLElement {
 export async function statsView(root: HTMLElement) {
   const [games, problems] = await Promise.all([db.allGames(), db.allProblems()]);
   root.append(h("h1", {}, "分析"));
+  root.append(h("a", { class: "card guide-link", href: "#/skill" }, h("b", {}, "📈 実力の測定"), h("span", { class: "small muted" }, " 正確さ・推定段級・戦型ごとの実力と推移 →")));
   if (!games.length) {
     root.append(emptyState("対局を取り込むと、ここに成績と弱点が表示されます。", h("a", { class: "btn primary", href: "#/import" }, "棋譜を取り込む")));
     return;

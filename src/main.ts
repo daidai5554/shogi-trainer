@@ -9,6 +9,7 @@ import { gamesView } from "./views/games";
 import { gameView } from "./views/game";
 import { trainView } from "./views/train";
 import { statsView } from "./views/stats";
+import { skillView } from "./views/skill";
 import { settingsView } from "./views/settings";
 import { bookView } from "./views/book";
 import { playView } from "./views/play";
@@ -26,6 +27,7 @@ const routes: { [k: string]: { view: View; tab: string } } = {
   guide: { view: guideView, tab: "home" },
   train: { view: trainView, tab: "train" },
   stats: { view: statsView, tab: "stats" },
+  skill: { view: skillView, tab: "stats" },
   settings: { view: settingsView, tab: "settings" },
 };
 

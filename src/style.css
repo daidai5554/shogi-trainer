@@ -383,3 +383,31 @@ summary { cursor: pointer; color: var(--accent); }
 .link-toast { text-decoration: none; display: block; }
 .timer { display: inline-block; font-weight: 700; font-size: 0.9rem; color: var(--accent); margin: 4px 0; }
 .timer.hurry { color: var(--bad); }
+
+/* 実力の測定 */
+h3 { font-size: 0.95rem; margin: 14px 0 4px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.tile { background: var(--bg); border-radius: 10px; padding: 10px; }
+.tile-label { font-size: 0.78rem; color: var(--muted); }
+.tile-value { font-size: 1.4rem; font-weight: 700; margin: 2px 0; }
+.tile-sub { font-size: 0.72rem; }
+.delta { font-size: 0.78rem; font-weight: 600; }
+.chip-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 4px; scrollbar-width: none; }
+.chip-btn { flex: none; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 0.82rem; cursor: pointer; }
+.chip-btn.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 700; }
+.chart-svg { width: 100%; height: auto; display: block; touch-action: pan-y; }
+.chart-svg .grid { stroke: var(--line); stroke-width: 1; }
+.chart-svg .axis { fill: var(--muted); font-size: 10px; }
+.chart-svg .dot { fill: var(--muted); opacity: 0.45; }
+.chart-svg .ma { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-svg .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart-svg .mark { fill: var(--accent); stroke: var(--card); stroke-width: 2; }
+.chart-tip { min-height: 2.8em; padding: 6px 2px 0; color: var(--text); }
+.phase-cmp { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.phase-head { display: flex; justify-content: space-between; font-size: 0.9rem; }
+.phase-cmp .bar-row { margin: 3px 0; }
+.phase-cmp .bar-value { width: 3.2em; }
+.hbar.thin { height: 8px; }
+.hbar-fill.me { background: var(--accent); }
+.hbar-fill.opp { background: var(--muted); opacity: 0.6; }
+.good-note .weak-title { color: var(--good); }
