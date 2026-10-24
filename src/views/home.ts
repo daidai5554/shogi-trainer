@@ -1,3 +1,4 @@
+import { checkClipboard, clipboardPermission } from "../autoimport";
 import * as db from "../db";
 import { onGameAnalyzed } from "../jobs";
 import { summarize } from "../session";
@@ -25,6 +26,8 @@ export async function homeView(root: HTMLElement) {
     const st = db.streak(await db.getActivity());
     const lastBackup = (await db.getKV<number>("lastBackupAt")) ?? 0;
     const needBackup = games.length >= 5 && Date.now() - lastBackup > 14 * 86_400_000;
+    // 自動取り込みがオンで、まだクリップボードの許可が無いときは、許可を案内する
+    const askClip = (await db.getSettings()).autoClipboard !== false && (await clipboardPermission()) === "prompt";
     root.replaceChildren(
       h("div", { class: "title-row" }, h("h1", {}, "将棋トレーナー"),
         st.days ? h("span", { class: "streak" + (st.today ? " done" : "") }, `連続${st.days}日`) : ""),
@@ -44,6 +47,18 @@ export async function homeView(root: HTMLElement) {
         ),
         h("div", { class: "row" }, h("a", { class: "btn" + (problems.length ? "" : " primary"), href: "#/import" }, "棋譜を取り込む")),
       ),
+      askClip
+        ? h("section", { class: "card" },
+          h("div", { class: "small" }, h("b", {}, "棋譜の自動取り込み"), "：ウォーズ／クエストで棋譜をコピーしてからこのアプリを開くと、自動で取り込みます。"),
+          h("button", {
+            class: "btn small", onclick: async () => {
+              // ボタンを押したときに読むと、ブラウザが許可を聞いてくる
+              try { await navigator.clipboard.readText(); } catch { /* 拒否された */ }
+              await checkClipboard();
+              void draw();
+            },
+          }, "クリップボードの読み取りを許可する"))
+        : "",
       needBackup
         ? h("section", { class: "card warn-card" },
           h("div", { class: "small" }, lastBackup ? "最後のバックアップから2週間以上たちました。" : "まだバックアップがありません。"),

@@ -113,4 +113,5 @@ export interface Settings {
   threads: number;
   speedMode?: boolean; // 早指しモード(1問30秒・詰将棋60秒)
   furibisha?: boolean; // 振り飛車党: 序盤で居飛車の手を正解にしない
+  autoClipboard?: boolean; // アプリを開いたとき、コピーした棋譜を自動で取り込む(未設定=オン)
 }

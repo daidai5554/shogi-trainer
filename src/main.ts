@@ -3,6 +3,7 @@ import { engine } from "./engine";
 import { jobStatus, onGameAnalyzed, onJobChange, resumePending } from "./jobs";
 import { h } from "./ui";
 import { requestPersistence } from "./db";
+import { setupAutoImport } from "./autoimport";
 import { homeView } from "./views/home";
 import { importView } from "./views/import";
 import { gamesView } from "./views/games";
@@ -126,5 +127,6 @@ async function setupServiceWorker() {
 
 void setupServiceWorker();
 void requestPersistence();
+setupAutoImport();
 void render();
 void resumePending();

@@ -1,6 +1,6 @@
+import { storeGame } from "../autoimport";
 import * as db from "../db";
-import { enqueue } from "../jobs";
-import { importGame, opposite, toResult } from "../kifu";
+import { importGame } from "../kifu";
 import type { Game } from "../types";
 import { h, toast } from "../ui";
 
@@ -40,20 +40,7 @@ export async function importView(root: HTMLElement) {
   };
 
   const save = async (game: Game, side: Game["mySide"], remember = false) => {
-    if (remember) {
-      // 選んだ名前を覚えて、次回から自動で先後を判定する
-      const name = side === "black" ? game.black : game.white;
-      const st = await db.getSettings();
-      if (name && !st.usernames.includes(name)) await db.putSettings({ ...st, usernames: [...st.usernames, name] });
-    }
-    if (side !== game.mySide) {
-      // 先後を入れ替えたら勝敗も入れ替える
-      const winner = game.result === "win" ? game.mySide : game.result === "lose" ? opposite(game.mySide) : game.result === "draw" ? "draw" : null;
-      game.mySide = side;
-      game.result = toResult(winner, side);
-    }
-    await db.putGame(game);
-    enqueue(game.id, true);
+    await storeGame(game, side, remember);
     toast("取り込みました。AIが解析を始めます");
     location.hash = `#/game/${game.id}`;
   };

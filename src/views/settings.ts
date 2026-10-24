@@ -20,6 +20,7 @@ export async function settingsView(root: HTMLElement) {
 
   const speedChk = h("input", { type: "checkbox", ...(s.speedMode ? { checked: true } : {}) }) as HTMLInputElement;
   const furiChk = h("input", { type: "checkbox", ...(s.furibisha ? { checked: true } : {}) }) as HTMLInputElement;
+  const clipChk = h("input", { type: "checkbox", ...(s.autoClipboard !== false ? { checked: true } : {}) }) as HTMLInputElement;
 
   const save = async () => {
     await db.putSettings({
@@ -28,6 +29,7 @@ export async function settingsView(root: HTMLElement) {
       threads: Number(threads.value),
       speedMode: speedChk.checked,
       furibisha: furiChk.checked,
+      autoClipboard: clipChk.checked,
     });
     if (!!s.furibisha !== furiChk.checked) {
       s.furibisha = furiChk.checked;
@@ -67,6 +69,7 @@ export async function settingsView(root: HTMLElement) {
       h("label", { class: "field" }, h("span", {}, "解析の深さ"), depth),
       h("label", { class: "check field" }, furiChk, h("span", {}, "振り飛車党（序盤で飛車先の歩を突く居飛車の手を正解にせず、振り飛車の範囲での最善手で判定）")),
       h("label", { class: "check field" }, speedChk, h("span", {}, "早指しモード（練習に制限時間：1問30秒・詰将棋60秒）")),
+      h("label", { class: "check field" }, clipChk, h("span", {}, "アプリを開いたとき、コピーした棋譜を自動で取り込む（クリップボードの許可が必要）")),
       h("label", { class: "field" }, h("span", {}, "AIのスレッド数"), threads,
         h("small", { class: "muted" }, "多いほど速いですが、スマホが熱くなりやすくなります。")),
       h("button", { class: "btn primary", onclick: () => void save() }, "保存"),
