@@ -194,8 +194,9 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
     const board = new BoardView(record.position, { ...names, interactive: { color, onMove: (m) => void onMove(m) } });
     const feedback = h("div", { class: "feedback" });
     const buttons = h("div", { class: "row" });
+    const branchSlot = h("div", {}); // 分岐の切り替え(答えの表示後)
     const timerEl = h("span", {});
-    container.replaceChildren(tags, promptEl, p.note ? h("p", { class: "small muted" }, p.note) : "", timerEl, board.el, feedback, buttons, source);
+    container.replaceChildren(tags, promptEl, p.note ? h("p", { class: "small muted" }, p.note) : "", timerEl, board.el, branchSlot, buttons, feedback, source);
     startTimer(30, timerEl, async () => {
       if (attempted) return;
       attempted = true;
@@ -249,7 +250,7 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
       if (yourLine) branches.push({ label: "あなたの手", moves: [played!, ...yourLine.pv] });
       if (refute.length) branches.push({ label: "実戦の手", moves: [p.playedUsi, ...refute] });
       const pv = pvButtons(p.sfen, branches, board, names, start);
-      feedback.append(pv.segs);
+      branchSlot.replaceChildren(pv.segs);
       buttons.replaceChildren(...pv.buttons, nextButton());
     };
 
@@ -306,9 +307,10 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
     const board = new BoardView(pos, { ...names, interactive: { color, onMove: (m) => void onMove(m) } });
     const feedback = h("div", { class: "feedback" });
     const buttons = h("div", { class: "row" });
+    const branchSlot = h("div", {}); // 分岐の切り替え(答えの表示後)
     const movesEl = h("div", { class: "pv-moves small" });
     const timerEl = h("span", {});
-    container.replaceChildren(tags, promptEl, p.note ? h("p", { class: "small muted" }, p.note) : "", timerEl, board.el, movesEl, feedback, buttons, source);
+    container.replaceChildren(tags, promptEl, p.note ? h("p", { class: "small muted" }, p.note) : "", timerEl, board.el, movesEl, branchSlot, buttons, feedback, source);
     startTimer(60, timerEl, () => { if (!finished) void end(false, "時間切れです。"); });
 
     const redraw = (interactive: boolean) => {
@@ -341,7 +343,7 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
       const branches: Branch[] = [{ label: "正解手順", moves: p.bestPv }];
       if (yourMoves.length) branches.push({ label: "あなたの手順", moves: yourMoves });
       const pv = pvButtons(p.sfen, branches, board, names, () => redraw(false));
-      feedback.append(pv.segs);
+      branchSlot.replaceChildren(pv.segs);
       buttons.replaceChildren(...pv.buttons, nextButton());
     };
 
