@@ -411,3 +411,9 @@ h3 { font-size: 0.95rem; margin: 14px 0 4px; }
 .hbar-fill.me { background: var(--accent); }
 .hbar-fill.opp { background: var(--muted); opacity: 0.6; }
 .good-note .weak-title { color: var(--good); }
+
+/* 練習: 次の問題へ は手順ボタンから離して右端に。前の問題に戻る */
+.row .next-btn { margin-left: auto; }
+.back-bar:empty { display: none; }
+.back-bar { margin: 4px 0 2px; }
+.link-btn { background: none; border: none; padding: 6px 0; color: var(--accent); font: inherit; font-size: 0.9rem; cursor: pointer; }

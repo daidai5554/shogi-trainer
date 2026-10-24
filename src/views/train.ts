@@ -78,10 +78,13 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
   const graded = new Set<string>();
   const requeued = new Set<string>();
   const container = h("div", {});
+  const backBar = h("div", { class: "back-bar" });
+  // 解いた問題の画面(回答後の状態)を残しておき、「前の問題に戻る」で表示し直す
+  const screens = new Map<number, Node[]>();
   const progress = h("div", { class: "progress" });
   root.append(
     h("div", { class: "title-row" }, h("h1", {}, title), label ? h("a", { class: "link", href: "#/train" }, "今日のトレーニングへ") : ""),
-    progress, container);
+    progress, backBar, container);
 
   const drawProgress = () => {
     progress.replaceChildren(...session.map((it, i) =>
@@ -121,7 +124,18 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
     }, 1000);
   };
 
-  const next = () => { stopTimer(); index++; void show(); };
+  const leave = (to: number) => {
+    stopTimer();
+    screens.set(index, [...container.childNodes]);
+    index = to;
+    void show();
+  };
+  const next = () => leave(index + 1);
+  const drawBackBar = () => {
+    backBar.replaceChildren(index > 0 && screens.has(index - 1)
+      ? h("button", { class: "link-btn", onclick: () => leave(index - 1) }, "← 前の問題に戻る")
+      : "");
+  };
 
   const record1 = async (p: Problem, ok: boolean) => {
     if (graded.has(p.id + ":" + index)) return;
@@ -136,6 +150,11 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
 
   const show = async () => {
     drawProgress();
+    drawBackBar();
+    window.scrollTo(0, 0);
+    // 一度表示した問題は、そのときの画面(回答後なら答えの表示)に戻す
+    const saved = screens.get(index);
+    if (saved && index < session.length) { container.replaceChildren(...saved); return; }
     if (index >= session.length) return finish();
     const item = session[index];
     if (item.type === "line") {
@@ -433,7 +452,7 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
   };
 
   const nextButton = () =>
-    h("button", { class: "btn primary", onclick: next }, index + 1 < session.length ? "次へ" : "終わる");
+    h("button", { class: "btn primary next-btn", onclick: next }, index + 1 < session.length ? "次の問題へ" : "終わる");
 
   await show();
   return stopTimer;
