@@ -1,6 +1,7 @@
 // 「今日のトレーニング」: 定跡・悪手の復習・咎め・詰将棋をバランスよく少しずつ。
 // 1セット約5分(8問)。対局前のウォーミングアップにもそのまま使う。
 import { problemKind } from "./analysis";
+import { canShowToday } from "./srs";
 import type { Phase, Problem, ProblemKind, Side } from "./types";
 
 export const SET_SIZE = 8;
@@ -35,7 +36,8 @@ export function buildDailySet(all: Problem[], now = Date.now(), extra = false, s
     all.filter((p) => problemKind(p) === k && p.history.length > 0 && p.history[0].at >= today).length;
 
   const pool = (k: ProblemKind): Problem[] => {
-    const ofKind = all.filter((p) => problemKind(p) === k);
+    // 今日すでに2回解いた問題は出さない
+    const ofKind = all.filter((p) => problemKind(p) === k && canShowToday(p, now));
     const due = ofKind.filter((p) => p.due <= now);
     // 弱点の局面(focus)の問題を優先
     const pri = (p: Problem) => (focus && p.phase === focus ? 0 : 1);

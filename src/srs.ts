@@ -28,6 +28,20 @@ function startOfDay(t: number): number {
   return d.getTime() > t ? d.getTime() - DAY : d.getTime();
 }
 
+/** 同じ問題を1日に出す回数の上限(間違えたときの出し直しを含む) */
+export const MAX_PER_DAY = 2;
+
+/** 今日(朝4時区切り)この問題を解いた回数 */
+export function attemptsToday(p: Problem, now = Date.now()): number {
+  const from = startOfDay(now);
+  return p.history.filter((x) => x.at >= from).length;
+}
+
+/** 今日まだ出してよいか */
+export function canShowToday(p: Problem, now = Date.now()): boolean {
+  return attemptsToday(p, now) < MAX_PER_DAY;
+}
+
 export function isDue(p: Problem, now = Date.now()): boolean {
   return p.due <= now;
 }

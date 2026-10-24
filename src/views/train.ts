@@ -10,7 +10,7 @@ import { negate, scoreText, winRate } from "../score";
 import { buildSessionItems, summarize, type SessionItem } from "../session";
 import { loadTree, pickDrillSide, runLineDrill } from "./linedrill";
 import { conversionCard } from "./play";
-import { grade } from "../srs";
+import { canShowToday, grade } from "../srs";
 import { PHASE_JA, currentFocus } from "../stats";
 import type { Problem, ProblemKind, Score } from "../types";
 import { fmtDate, h } from "../ui";
@@ -44,7 +44,7 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
       (!q.get("tag") || p.tags.includes(q.get("tag") as Problem["tags"][number])) &&
       (!q.get("kind") || problemKind(p) === q.get("kind")) &&
       (!q.get("opening") || p.opening === q.get("opening"));
-    const filtered = all.filter(match);
+    const filtered = all.filter((p) => match(p) && canShowToday(p, now));
     session = [
       ...filtered.filter((p) => p.due <= now).sort((a, b) => a.due - b.due),
       ...filtered.filter((p) => p.due > now).sort((a, b) => a.ease - b.ease || b.lapses - a.lapses),
@@ -127,10 +127,11 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
     if (graded.has(p.id + ":" + index)) return;
     graded.add(p.id + ":" + index);
     if (ok) correctCount++;
-    await db.putProblem(grade(p, ok));
+    const g = grade(p, ok);
+    await db.putProblem(g);
     void db.logPractice(ok);
-    // 間違えた問題はこのセッションの最後にもう一度(1問につき1回まで)
-    if (!ok && !requeued.has(p.id)) { requeued.add(p.id); session.push({ type: "problem", p }); drawProgress(); }
+    // 間違えた問題はこのセッションの最後にもう一度(1問につき1回まで・同じ日に2回まで)
+    if (!ok && !requeued.has(p.id) && canShowToday(g)) { requeued.add(p.id); session.push({ type: "problem", p: g }); drawProgress(); }
   };
 
   const show = async () => {
@@ -256,7 +257,7 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
 
     /** 正解リストに無い手は、AIで評価して最善とほぼ同じなら正解(別解)とする */
     const isAlternative = async (usi: string): Promise<boolean | null> => {
-      if (engine.state !== "ready") return null;
+      if (!(await ensureEngine(feedback))) return null;
       feedback.replaceChildren(h("div", { class: "muted" }, "AIがあなたの手を確認中…"));
       const res = await engine.search(`sfen ${p.sfen} moves ${usi}`, { nodes: 300_000 });
       const s = res.lines[0] ? negate(res.lines[0].score) : null;
@@ -274,8 +275,18 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
       const after = record.position.clone();
       after.doMove(m);
       board.update(after, { ...names, lastMoveUsi: usi });
-      const ok = p.answers.includes(usi) || (usi !== p.playedUsi && (await isAlternative(usi)) === true);
-      const alt = ok && !p.answers.includes(usi);
+      const listed = p.answers.includes(usi);
+      const altResult = listed || usi === p.playedUsi ? false : await isAlternative(usi);
+      if (altResult === null) {
+        // AIが使えず判定できない手は、成績に数えない
+        attempted = true;
+        showAnswer(false, usi);
+        feedback.querySelector(".verdict")?.replaceWith(h("div", { class: "verdict" }, "？ 判定できませんでした"),
+          h("div", { class: "small muted" }, "AIを使えないため、この手が別解かどうか判定できませんでした（成績には数えません）。"));
+        return;
+      }
+      const ok = listed || altResult;
+      const alt = ok && !listed;
       await record1(p, ok && !hintUsed);
       showAnswer(ok, usi, (alt ? "（別解）" : "") + (hintUsed && ok ? "（ヒントあり）" : ""));
     };
@@ -361,7 +372,7 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
         const left = mateLen - moves.length; // 残り手数
         if (left <= 0) return await end(false, `${mateLen}手では詰んでいません。`);
         let reply: string | null = null;
-        if (engine.state === "ready") {
+        if (await ensureEngine(feedback)) {
           feedback.replaceChildren(h("div", { class: "muted" }, "AIが受けを考えています…"));
           const res = await engine.search(`sfen ${p.sfen} moves ${moves.join(" ")}`, { nodes: 300_000 });
           const s = res.lines[0]?.score;
@@ -401,6 +412,24 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
       }, "ヒント"),
       h("button", { class: "btn", onclick: () => { if (!finished) void end(false, ""); } }, "答えを見る"),
     );
+  };
+
+  /** AIの準備ができるまで待つ。使えなければ false */
+  const ensureEngine = async (feedback: HTMLElement): Promise<boolean> => {
+    if (engine.state === "ready") return true;
+    const show = () => feedback.replaceChildren(h("div", { class: "muted" },
+      engine.state === "loading" ? `AIの準備ができるまで待っています… ${Math.round(engine.progress * 100)}%` : "AIの準備ができるまで待っています…"));
+    show();
+    const off = engine.onChange(show);
+    try {
+      await engine.load((await db.getSettings()).threads);
+    } catch {
+      return false;
+    } finally {
+      off();
+    }
+    const st: string = engine.state; // await の間に変わるので読み直す
+    return st === "ready";
   };
 
   const nextButton = () =>
