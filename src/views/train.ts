@@ -278,7 +278,8 @@ export async function trainView(root: HTMLElement, _args: string[], q: URLSearch
     const isAlternative = async (usi: string): Promise<boolean | null> => {
       if (!(await ensureEngine(feedback))) return null;
       feedback.replaceChildren(h("div", { class: "muted" }, "AIがあなたの手を確認中…"));
-      const res = await engine.search(`sfen ${p.sfen} moves ${usi}`, { nodes: 300_000 });
+      // 序盤は手の差が小さいので、深めに読んで判定する
+      const res = await engine.search(`sfen ${p.sfen} moves ${usi}`, { nodes: kind === "book" ? 600_000 : 300_000 });
       const s = res.lines[0] ? negate(res.lines[0].score) : null;
       if (!s) return null;
       yours = { score: s, pv: res.lines[0].pv.slice(0, 10) };

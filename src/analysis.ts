@@ -32,11 +32,11 @@ export function bestLine(a: PlyAnalysis | null | undefined): PVLine | undefined 
 }
 
 /** ply手目(自分の手)を評価するときの候補手。絞り込みが要らなければ null */
-function styleCandidates(game: Game, record: Record, ply: number): string[] | null {
+function styleCandidates(game: Game, record: Record, ply: number, force = false): string[] | null {
   if (ply > BOOK_MAX_PLY || ply > game.usiMoves.length) return null;
   record.goto(ply - 1);
   if ((record.position.color === Color.BLACK ? "black" : "white") !== game.mySide) return null;
-  return furibishaCandidates(record.position, game.usiMoves[ply - 1], game.analysis[ply - 1]?.lines[0]?.pv[0]);
+  return furibishaCandidates(record.position, game.usiMoves[ply - 1], game.analysis[ply - 1]?.lines[0]?.pv[0], force);
 }
 
 /**
@@ -50,6 +50,8 @@ export async function analyzeGame(game: Game, search: SearchFn, nodes: number, h
     game.analysis = Array.from({ length: total }, (_, i) => game.analysis[i] ?? null);
   }
   let lastSave = Date.now();
+  // 振り飛車党の判定のしかたが変わったら、振り飛車の範囲での最善を調べ直す
+  const restyle = furibisha && (game.styleVersion ?? 1) < STYLE_VERSION;
   for (let i = 0; i < total; i++) {
     if (hooks.cancelled?.()) return game;
     const a = game.analysis[i];
@@ -58,6 +60,7 @@ export async function analyzeGame(game: Game, search: SearchFn, nodes: number, h
       game.analysis[i] = { ply: i + 1, lines: res.lines, nodes } satisfies PlyAnalysis;
     }
     const cur = game.analysis[i]!;
+    if (restyle) delete cur.style;
     if (!furibisha) delete cur.style;
     else if (cur.style === undefined) {
       const cands = styleCandidates(game, record, i + 1);
@@ -70,6 +73,7 @@ export async function analyzeGame(game: Game, search: SearchFn, nodes: number, h
     }
   }
   game.analysisNodes = nodes;
+  if (furibisha) game.styleVersion = STYLE_VERSION;
   game.verdicts = judgeMoves(game, record);
   game.strategy = detectStrategy(record, game.mySide);
   game.analysisDone = true;
@@ -172,12 +176,26 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
     const id = `${game.id}:${v.ply}`;
     const kind: ProblemKind = v.phase === "opening" ? "book" : punishable(game, v.ply) ? "punish" : "mistake";
     const prev = existing.get(id);
-    // 振り飛車党の設定: 居飛車の手を除いた中から正解を選ぶ
-    const cands = game.analysis[v.ply - 1]?.style ? styleCandidates(game, record, v.ply) : null;
+    // 振り飛車党の設定(style を調べてある)なら、振る前の局面では常に居飛車の手を除いた中から正解を選ぶ
+    const cands = game.analysis[v.ply - 1]?.style !== undefined ? styleCandidates(game, record, v.ply, true) : null;
+    const deep = Math.max(nodes * 2, 600_000);
+    const pos = positionArg(game, record, v.ply);
+    /** 実戦の手を深く読み直して、最善(勝率 bestWr)とほぼ同じなら true。序盤は上位3手に入らなくても十分な手が多い */
+    const playedIsFine = async (bestWr: number): Promise<boolean> => {
+      if (kind !== "book") return false;
+      const r = await search(pos, { nodes: deep, searchmoves: [v.usi] });
+      const s = r.lines[0]?.score;
+      return !!s && bestWr - winRate(s) <= 0.04;
+    };
     // 既存の問題は学習履歴を残したまま、種類だけ最新の判定にする(正解が候補から外れた問題は作り直す)
-    if (prev && !(cands && prev.answers.some((a) => !cands.includes(a)))) { out.push({ ...prev, kind }); onProgress?.(++done, targets.length); continue; }
+    if (prev && !(cands && prev.answers.some((a) => !cands.includes(a)))) {
+      onProgress?.(++done, targets.length);
+      if (await playedIsFine(winRate(prev.bestScore))) continue;
+      out.push({ ...prev, kind });
+      continue;
+    }
 
-    const res = await search(positionArg(game, record, v.ply), { nodes: Math.max(nodes * 2, 600_000), multipv: 3, searchmoves: cands ?? undefined });
+    const res = await search(pos, { nodes: deep, multipv: 3, searchmoves: cands ?? undefined });
     onProgress?.(++done, targets.length);
     const best = res.lines[0];
     if (!best || best.pv.length === 0) continue;
@@ -188,7 +206,7 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
         : bestWr - winRate(l.score) <= 0.04))
       .map((l) => l.pv[0]);
     // 深く読むと実戦の手も十分だった場合は問題にしない
-    if (answers.includes(v.usi)) continue;
+    if (answers.includes(v.usi) || await playedIsFine(bestWr)) continue;
 
     // 読み筋が途中で切れていたら続きを読ませる(詰みは最後まで、それ以外は8手程度)
     const target = best.score.kind === "mate" && best.score.win ? best.score.v : 8;
@@ -209,7 +227,7 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
     out.push({
       id, gameId: game.id, ply: v.ply,
       kind,
-      note: cands ? "振り飛車の方針での最善手を正解にしています（飛車先の歩を突く居飛車の手は除外）。" : undefined,
+      note: cands ? "振り飛車の方針での最善手を正解にしています（飛車先の歩を突く手や、飛車の通り道をふさぐ手は除外）。" : undefined,
       sfen: record.position.sfen,
       side: v.side,
       playedUsi: v.usi,
@@ -228,7 +246,9 @@ export async function buildProblems(game: Game, search: SearchFn, nodes: number,
 }
 
 export const BOOK_MAX_PLY = 40;
-export const PROBLEMS_VERSION = 8;
+export const PROBLEMS_VERSION = 9;
+/** 振り飛車党の候補手の絞り込み方の版(上がったら style を調べ直す) */
+export const STYLE_VERSION = 2;
 
 /** ply手目(自分の手)の直前に、相手が悪手(勝率20%以上の損)を指していたか */
 function punishable(game: Game, ply: number): boolean {

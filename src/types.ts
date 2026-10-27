@@ -71,6 +71,7 @@ export interface Game {
   verdicts: MoveVerdict[] | null;
   problemsVersion?: number; // 問題作成ロジックの版。上がったら作り直す
   problemsStyle?: "furibisha" | "any"; // 問題を作ったときの戦法の設定。変わったら作り直す
+  styleVersion?: number; // 振り飛車の範囲での最善(style)を調べたときの判定の版
 }
 
 export type ProblemTag = "blunder" | "mistake" | "missedMate" | "allowedMate";

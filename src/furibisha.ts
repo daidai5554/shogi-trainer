@@ -34,26 +34,37 @@ export function isRookSwing(pos: ImmutablePosition, usi: string): boolean {
   return !!m && m.type === PieceType.ROOK && m.from[0] === 2 && m.from[1] === 8 && m.to[1] === 8 && m.to[0] !== 2;
 }
 
-/** 居飛車の手: 飛車先(2筋)の歩を突く・2八の飛車を縦に動かす */
+/**
+ * 振り飛車党が振る前に指さない手:
+ * 飛車先(2筋)の歩を突く・2八の飛車を縦に動かす・飛車の通り道(3八〜5八)に駒を置く(▲4八銀など)
+ */
 export function isIbishaMove(pos: ImmutablePosition, usi: string): boolean {
+  if (usi[1] === "*") {
+    const to = Square.newByUSI(usi.slice(2, 4));
+    if (!to) return false;
+    const [f, r] = norm(pos.color, to);
+    return r === 8 && f >= 3 && f <= 5;
+  }
   const m = parse(pos, usi);
   if (!m) return false;
   if (m.type === PieceType.PAWN && m.from[0] === 2) return true;
-  return m.type === PieceType.ROOK && m.from[0] === 2 && m.from[1] === 8 && m.to[0] === 2;
+  if (m.type === PieceType.ROOK) return m.from[0] === 2 && m.from[1] === 8 && m.to[0] === 2;
+  return m.to[1] === 8 && m.to[0] >= 3 && m.to[0] <= 5;
 }
 
 /**
  * 実戦の手を評価するときの候補手(AIにこの中から最善を選ばせる)。絞り込みが要らなければ null。
  * - 飛車を振った手 → 振る手の中での最善と比べる(どこに振るのが良かったか)
  * - 振る前の手で、AIが居飛車の手を勧めている → 居飛車の手を除いた最善と比べる
+ * force: AIの最善手が候補に入っていても絞り込む(深く読み直すと居飛車の手が最善になることがあるため)
  */
-export function furibishaCandidates(pos: ImmutablePosition, played: string, aiBest: string | undefined): string[] | null {
+export function furibishaCandidates(pos: ImmutablePosition, played: string, aiBest: string | undefined, force = false): string[] | null {
   if (!rookUnswung(pos)) return null;
   let keep: ((u: string) => boolean) | null = null;
   if (isRookSwing(pos, played)) keep = (u) => isRookSwing(pos, u);
-  else if (!isIbishaMove(pos, played) && aiBest && isIbishaMove(pos, aiBest)) keep = (u) => !isIbishaMove(pos, u);
+  else if (!isIbishaMove(pos, played) && (force || (aiBest && isIbishaMove(pos, aiBest)))) keep = (u) => !isIbishaMove(pos, u);
   // AIの最善手がすでに候補に入っていれば、絞り込んでも結果は同じ
-  if (!keep || (aiBest && keep(aiBest))) return null;
+  if (!keep || (!force && aiBest && keep(aiBest))) return null;
   const moves = legalUsiMoves(pos).filter(keep);
   return moves.length ? moves : null;
 }
